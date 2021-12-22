@@ -2,10 +2,19 @@ namespace Tmds.DBus.Protocol;
 
 public ref struct MessageWriter
 {
-    private Message _message;
+    private readonly Message _message;
     private Span<byte> _span;
     private int _offset;
     private int _buffered;
+
+    private IBufferWriter<byte> Writer
+    {
+        get
+        {
+            Flush();
+            return _message.Writer;
+        }
+    }
 
     internal MessageWriter(Message message)
     {
@@ -16,25 +25,33 @@ public ref struct MessageWriter
     }
 
     public void WriteMethodCallHeader(
-        StringSpan destination,
-        StringSpan path,
-        StringSpan @interface,
-        StringSpan member,
-        StringSpan signature = default,
+        string? destination = null,
+        string? path = null,
+        string? @interface = null,
+        string? member = null,
+        string? signature = null,
         MessageFlags flags = MessageFlags.None)
     {
         ArrayStart start = WriteHeaderStart(MessageType.MethodCall, flags);
 
         // Path.
-        if (!path.IsEmpty)
+        if (path is not null)
         {
             WriteStructureStart();
             WriteByte((byte)MessageHeader.Path);
             WriteVariantObjectPath(path);
         }
 
+        // Interface.
+        if (@interface is not null)
+        {
+            WriteStructureStart();
+            WriteByte((byte)MessageHeader.Interface);
+            WriteVariantString(@interface);
+        }
+
         // Member.
-        if (!member.IsEmpty)
+        if (member is not null)
         {
             WriteStructureStart();
             WriteByte((byte)MessageHeader.Member);
@@ -42,23 +59,15 @@ public ref struct MessageWriter
         }
 
         // Destination.
-        if (!destination.IsEmpty)
+        if (destination is not null)
         {
             WriteStructureStart();
             WriteByte((byte)MessageHeader.Destination);
             WriteVariantString(destination);
         }
 
-        // Interface.
-        if (!@interface.IsEmpty)
-        {
-            WriteStructureStart();
-            WriteByte((byte)MessageHeader.Interface);
-            WriteVariantString(@interface);
-        }
-
         // Signature.
-        if (!signature.IsEmpty)
+        if (signature is not null)
         {
             WriteStructureStart();
             WriteByte((byte)MessageHeader.Signature);
@@ -69,14 +78,14 @@ public ref struct MessageWriter
     }
 
     public void WriteMethodReturnHeader(
-        StringSpan destination,
         uint replySerial,
-        StringSpan signature = default)
+        string? destination = null,
+        string? signature = null)
     {
         ArrayStart start = WriteHeaderStart(MessageType.MethodReturn, MessageFlags.None);
 
         // Destination.
-        if (!destination.IsEmpty)
+        if (destination is not null)
         {
             WriteStructureStart();
             WriteByte((byte)MessageHeader.Destination);
@@ -84,7 +93,7 @@ public ref struct MessageWriter
         }
 
         // Signature.
-        if (!signature.IsEmpty)
+        if (signature is not null)
         {
             WriteStructureStart();
             WriteByte((byte)MessageHeader.Signature);
@@ -95,15 +104,15 @@ public ref struct MessageWriter
     }
 
     public void WriteErrorHeader(
-        StringSpan destination,
         uint replySerial,
-        StringSpan signature = default,
-        StringSpan error = default)
+        string? destination = null,
+        string? signature = null,
+        string? errorName = null)
     {
         ArrayStart start = WriteHeaderStart(MessageType.Error, MessageFlags.None);
 
         // Destination.
-        if (!destination.IsEmpty)
+        if (destination is not null)
         {
             WriteStructureStart();
             WriteByte((byte)MessageHeader.Destination);
@@ -111,15 +120,15 @@ public ref struct MessageWriter
         }
 
         // Error.
-        if (!@error.IsEmpty)
+        if (errorName is not null)
         {
             WriteStructureStart();
             WriteByte((byte)MessageHeader.ErrorName);
-            WriteVariantString(@error);
+            WriteVariantString(errorName);
         }
 
         // Signature.
-        if (!signature.IsEmpty)
+        if (signature is not null)
         {
             WriteStructureStart();
             WriteByte((byte)MessageHeader.Signature);
@@ -130,24 +139,32 @@ public ref struct MessageWriter
     }
 
     public void WriteSignalHeader(
-        StringSpan destination,
-        StringSpan path,
-        StringSpan @interface,
-        StringSpan member,
-        StringSpan signature = default)
+        string? destination = null,
+        string? path = null,
+        string? @interface = null,
+        string? member = null,
+        string? signature = null)
     {
         ArrayStart start = WriteHeaderStart(MessageType.Signal, MessageFlags.None);
 
         // Path.
-        if (!path.IsEmpty)
+        if (path is not null)
         {
             WriteStructureStart();
             WriteByte((byte)MessageHeader.Path);
             WriteVariantObjectPath(path);
         }
 
+        // Interface.
+        if (@interface is not null)
+        {
+            WriteStructureStart();
+            WriteByte((byte)MessageHeader.Interface);
+            WriteVariantString(@interface);
+        }
+
         // Member.
-        if (!member.IsEmpty)
+        if (member is not null)
         {
             WriteStructureStart();
             WriteByte((byte)MessageHeader.Member);
@@ -155,23 +172,15 @@ public ref struct MessageWriter
         }
 
         // Destination.
-        if (!destination.IsEmpty)
+        if (destination is not null)
         {
             WriteStructureStart();
             WriteByte((byte)MessageHeader.Destination);
             WriteVariantString(destination);
         }
 
-        // Interface.
-        if (!@interface.IsEmpty)
-        {
-            WriteStructureStart();
-            WriteByte((byte)MessageHeader.Interface);
-            WriteVariantString(@interface);
-        }
-
         // Signature.
-        if (!signature.IsEmpty)
+        if (signature is not null)
         {
             WriteStructureStart();
             WriteByte((byte)MessageHeader.Signature);
@@ -183,8 +192,8 @@ public ref struct MessageWriter
 
     private void WriteHeaderEnd(ref ArrayStart start)
     {
-        WritePadding(8);
         WriteArrayEnd(ref start);
+        WritePadding(8);
     }
 
     private ArrayStart WriteHeaderStart(MessageType type, MessageFlags flags)
@@ -204,7 +213,7 @@ public ref struct MessageWriter
         // UnixFds
         WriteStructureStart();
         WriteByte((byte)MessageHeader.UnixFds);
-        WriteVariantInt32(0); // unix fd length placeholder
+        WriteVariantUInt32(0); // unix fd length placeholder
         Debug.Assert(_offset == Message.UnixFdLengthOffset + 4);
         return start;
     }
@@ -234,9 +243,32 @@ public ref struct MessageWriter
 
     public void WriteString(StringSpan value) => WriteStringCore(value.Span);
 
-    public void WriteSignature(StringSpan value) => WriteStringCore(value.Span);
+    public void WriteString(string value) => WriteStringCore(value);
+
+    public void WriteSignature(StringSpan value)
+    {
+        ReadOnlySpan<byte> span = value.Span;
+        int length = span.Length;
+        WriteByte((byte)length);
+        var dst = GetSpan(length);
+        span.CopyTo(dst);
+        Advance(length);
+        WriteByte((byte)0);
+    }
+
+    public void WriteSignature(string s)
+    {
+        Span<byte> lengthSpan = GetSpan(1);
+        Advance(1);
+        int bytesWritten = (int)Encoding.UTF8.GetBytes(s.AsSpan(), Writer);
+        lengthSpan[0] = (byte)bytesWritten;
+        _offset += bytesWritten;
+        WriteByte(0);
+    }
 
     public void WriteObjectPath(StringSpan value) => WriteStringCore(value.Span);
+
+    public void WriteObjectPath(string value) => WriteStringCore(value);
 
     private void WriteStringCore(ReadOnlySpan<byte> span)
     {
@@ -246,6 +278,17 @@ public ref struct MessageWriter
         span.CopyTo(dst);
         Advance(length);
         WriteByte((byte)0);
+    }
+
+    private void WriteStringCore(string s)
+    {
+        WritePadding(4);
+        Span<byte> lengthSpan = GetSpan(4);
+        Advance(4);
+        int bytesWritten = (int)Encoding.UTF8.GetBytes(s.AsSpan(), Writer);
+        Unsafe.WriteUnaligned<uint>(ref MemoryMarshal.GetReference(lengthSpan), (uint)bytesWritten);
+        _offset += bytesWritten;
+        WriteByte(0);
     }
 
     private void WritePrimitiveCore<T>(T value, int alignment)
@@ -335,6 +378,24 @@ public ref struct MessageWriter
     }
 
     public void WriteVariantObjectPath(StringSpan value)
+    {
+        WriteSignature(ProtocolConstants.ObjectPathSignature);
+        WriteObjectPath(value);
+    }
+
+    public void WriteVariantString(string value)
+    {
+        WriteSignature(ProtocolConstants.StringSignature);
+        WriteString(value);
+    }
+
+    public void WriteVariantSignature(string value)
+    {
+        WriteSignature(ProtocolConstants.SignatureSignature);
+        WriteSignature(value);
+    }
+
+    public void WriteVariantObjectPath(string value)
     {
         WriteSignature(ProtocolConstants.ObjectPathSignature);
         WriteObjectPath(value);

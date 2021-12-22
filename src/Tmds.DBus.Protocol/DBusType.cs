@@ -1,6 +1,6 @@
 namespace Tmds.DBus.Protocol;
 
-public enum DBusType : byte
+enum DBusType : byte
 {
     Invalid = 0,
     Byte = (byte)'y',

@@ -8,35 +8,24 @@ public class MessageFormatter
 
         // Header.
         Append(sb, msg.Type);
-        sb.Append("  ");
-        sb.Append("serial=");
+        sb.Append(" serial=");
         sb.Append(msg.Serial);
-        sb.Append("  ");
         if (msg.ReplySerial.HasValue)
         {
-            sb.Append("repl=");
+            sb.Append(" rserial=");
             sb.Append(msg.ReplySerial.Value);
-            sb.Append("  ");
         }
-        Append(sb, "err", msg.Error);
-        sb.Append("  ");
-        Append(sb, "path", msg.Path);
-        sb.Append("  ");
-        Append(sb, "memb", msg.Member);
-        sb.Append("  ");
-        Append(sb, "body", msg.Signature);
-        sb.Append("  ");
-        Append(sb, "src", msg.Sender);
-        sb.Append("  ");
-        Append(sb, "dst", msg.Destination);
-        sb.Append("  ");
-        Append(sb, "ifac", msg.Interface);
-        sb.Append("  ");
+        Append(sb, " err", msg.Error);
+        Append(sb, " path", msg.Path);
+        Append(sb, " memb", msg.Member);
+        Append(sb, " body", msg.Signature);
+        Append(sb, " src", msg.Sender);
+        Append(sb, " dst", msg.Destination);
+        Append(sb, " ifac", msg.Interface);
         if (msg.UnixFds != 0)
         {
-            sb.Append("fds=");
+            sb.Append(" fds=");
             sb.Append(msg.UnixFds);
-            sb.Append("  ");
         }
 
         sb.AppendLine();

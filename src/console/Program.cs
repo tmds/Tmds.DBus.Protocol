@@ -1,16 +1,40 @@
 ﻿using System.Text;
+using System.Buffers;
 using Tmds.DBus.Protocol;
 
 class Program
 {
-    static void Main()
+    private static uint _serial = 1;
+    static async Task Main()
     {
+        using var stream = await MessageStream.ConnectAsync(Environment.GetEnvironmentVariable("DBUS_SESSION_BUS_ADDRESS"), "1000", true, default(CancellationToken));
+
+        stream.ReceiveMessages(ReceiveMessages, (object)null!);
+
         using var rented = MessagePool.Shared.Rent();
         var message = rented.Message;
 
-        WriteMessage(message);
+        WriteHello(message);
 
-        if (MessageReader.TryReadMessage(message.AsReadOnlySequence(), out MessageReader reader))
+        await stream.SendMessageAsync(message);
+
+
+        Console.WriteLine("Press any key to stop the application.");
+        Console.WriteLine();
+
+        Console.ReadLine();
+    }
+
+    private static void ReceiveMessages(Exception? exception, ref MessageReader reader, object state)
+    {
+        if (exception != null)
+        {
+            if (exception is not ObjectDisposedException)
+            {
+                Console.WriteLine($"Exception: {exception}");
+            }
+        }
+        else
         {
             PrintMessage(reader);
         }
@@ -23,36 +47,18 @@ class Program
         Console.WriteLine(sb.ToString());
     }
 
-    private static void WriteMessage(Message message)
+    private static void WriteHello(Message message)
     {
-        uint i = 314;
-        uint j = 159;
-
         // Write message.
         MessageWriter writer = message.GetWriter();
         writer.WriteMethodCallHeader(
-            destination: default,
-            path: s_example_calculator_Path,
-            @interface: default,
-            member: s_add_Method,
-            signature: s_add_MethodSignature);
-
-        writer.WriteUInt32(i);
-        writer.WriteUInt32(j);
-
-        ArrayStart start = writer.WriteArrayStart(4);
-        writer.WriteUInt32(i);
-        writer.WriteUInt32(j);
-        writer.WriteUInt32(i);
-        writer.WriteArrayEnd(ref start);
+            destination: "org.freedesktop.DBus",
+            path: "/org/freedesktop/DBus",
+            @interface: "org.freedesktop.DBus",
+            member: "Hello");
 
         writer.Flush();
-    }
 
-    private static readonly byte[] s_example_calculator_Path_Bytes = Encoding.UTF8.GetBytes("/example/calculator");
-    private static StringSpan s_example_calculator_Path => new StringSpan(s_example_calculator_Path_Bytes);
-    private static readonly byte[] s_add_Method_Bytes = Encoding.UTF8.GetBytes("Add");
-    private static StringSpan s_add_Method => new StringSpan(s_add_Method_Bytes);
-    private static readonly byte[] s_add_MethodSignature_Bytes = Encoding.UTF8.GetBytes("uuau");
-    private static StringSpan s_add_MethodSignature => new StringSpan(s_add_MethodSignature_Bytes);
+        message.SetSerial(_serial++);
+    }
 }
