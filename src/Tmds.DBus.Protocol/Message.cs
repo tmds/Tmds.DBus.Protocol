@@ -1,3 +1,5 @@
+using System.Collections.ObjectModel;
+
 namespace Tmds.DBus.Protocol;
 
 public class Message
@@ -5,22 +7,27 @@ public class Message
     internal const int LengthOffset = 4;
     internal const int SerialOffset = 8;
     internal const int HeaderFieldsLengthOffset = 12;
-    internal const int UnixFdLengthOffset = 28;
+    internal const int UnixFdLengthOffset = 20;
 
     private Sequence<byte> _sequence;
     private ArraySegment<byte> _firstSpan;
     private List<SafeHandle>? _handles;
+    private ReadOnlyCollection<SafeHandle>? _readonlyCollection;
 
     internal Message(Sequence<byte> sequence)
     {
         _sequence = sequence;
     }
 
-    internal void Reset()
+    internal void ReturnToPool()
     {
         _sequence.Reset();
         _firstSpan = default;
+        // TODO: dispose handles.
+        // TODO: return to pool...
     }
+
+    internal IBufferWriter<byte> Writer => _sequence;
 
     internal Span<byte> GetSpan(int sizeHint)
     {
@@ -40,7 +47,7 @@ public class Message
 
     public MessageWriter GetWriter() => new MessageWriter(this);
 
-    public void WriteSerial(uint serial)
+    public void SetSerial(uint serial)
     {
         Span<byte> span = _firstSpan;
         Unsafe.WriteUnaligned<uint>(ref MemoryMarshal.GetReference(span.Slice(SerialOffset)), serial);
@@ -52,6 +59,11 @@ public class Message
 
         // Length
         uint headerFieldsLength = Unsafe.ReadUnaligned<uint>(ref MemoryMarshal.GetReference(span.Slice(HeaderFieldsLengthOffset)));
+        uint pad = headerFieldsLength % 8;
+        if (pad != 0)
+        {
+            headerFieldsLength += (8 - pad);
+        }
         uint length = (uint)_sequence.Length             // Total length
                       - headerFieldsLength               // Header fields
                       - 4                                // Header fields length
@@ -68,4 +80,7 @@ public class Message
 
         return _sequence.AsReadOnlySequence;
     }
+
+    public IReadOnlyList<SafeHandle>? Handles =>
+        _readonlyCollection ?? (_readonlyCollection = _handles?.AsReadOnly());
 }

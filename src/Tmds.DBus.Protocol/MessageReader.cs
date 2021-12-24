@@ -30,13 +30,11 @@ public ref struct MessageReader
 
     private void Rewind()
     {
-        Span<byte> span = stackalloc byte[4];
-        _reader.Sequence.Slice(Message.HeaderFieldsLengthOffset, 4).CopyTo(span);
-        uint headerFieldsLength = _isBigEndian
-                                    ? BinaryPrimitives.ReadUInt32BigEndian(span)
-                                    : BinaryPrimitives.ReadUInt32LittleEndian(span);
-        int bodyOffset = Message.HeaderFieldsLengthOffset + 4 + (int)headerFieldsLength;
-        _reader.Rewind(bodyOffset - _reader.Consumed);
+        _reader = new SequenceReader<byte>(_reader.Sequence);
+        _reader.Advance(Message.HeaderFieldsLengthOffset);
+        uint headerFieldsLength = ReadUInt32();
+        _reader.Advance(headerFieldsLength);
+        AlignReader(alignment: 8);
     }
 
     private MessageReader(ReadOnlySequence<byte> sequence, bool isBigEndian, MessageType type, MessageFlags flags, uint serial, UnixFdCollection? handles)
@@ -137,8 +135,27 @@ public ref struct MessageReader
         return handle;
     }
 
-    public StringSpan ReadSignature() => ReadStringSpan();
+    public StringSpan ReadSignature()
+    {
+        int length = ReadByte();
 
+        var span = _reader.UnreadSpan;
+        if (span.Length <= length)
+        {
+            _reader.Advance(length + 1);
+            return new StringSpan(span.Slice(length));
+        }
+        else
+        {
+            var buffer = new byte[length];
+            if (!_reader.TryCopyTo(buffer))
+            {
+                throw new IndexOutOfRangeException();
+            }
+            _reader.Advance(length + 1);
+            return new StringSpan(buffer);
+        }
+    }
     public StringSpan ReadObjectPath() => ReadStringSpan();
 
     public StringSpan ReadString() => ReadStringSpan();
@@ -204,7 +221,7 @@ public ref struct MessageReader
         return true;
     }
 
-    public static bool TryReadMessage(ReadOnlySequence<byte> sequence, out MessageReader reader, UnixFdCollection? handles = null)
+    public static bool TryReadMessage(ref ReadOnlySequence<byte> sequence, out MessageReader reader, UnixFdCollection? handles = null)
     {
         reader = default;
 
@@ -231,6 +248,12 @@ public ref struct MessageReader
             return false;
         }
 
+        uint pad = headerFieldLength % 8;
+        if (pad != 0)
+        {
+            headerFieldLength += (8u - pad);
+        }
+
         long totalLength = seqReader.Consumed + headerFieldLength + bodyLength;
 
         if (sequence.Length < totalLength)
@@ -244,6 +267,8 @@ public ref struct MessageReader
                                     (MessageFlags)flags,
                                     serial,
                                     handles);
+
+        sequence = sequence.Slice(totalLength);
 
         return true;
 

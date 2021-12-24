@@ -33,7 +33,6 @@ public class MessagePool
 
     private void Return(Message value)
     {
-        value.Reset();
         lock (_pool)
         {
             if (_pool.Count < _maxSize)
