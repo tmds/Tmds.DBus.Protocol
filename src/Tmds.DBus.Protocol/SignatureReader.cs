@@ -4,11 +4,11 @@ ref struct SignatureReader
 {
     private ReadOnlySpan<byte> _signature;
 
-    public StringSpan Signature => new StringSpan(_signature);
+    public ReadOnlySpan<byte> Signature => _signature;
 
-    public SignatureReader(StringSpan signature)
+    public SignatureReader(ReadOnlySpan<byte> signature)
     {
-        _signature = signature.Span;
+        _signature = signature;
     }
 
     public bool TryRead(out DBusType type, out SignatureReader subReader) // TODO: change to out ReadOnlySpan<byte>
@@ -28,11 +28,11 @@ ref struct SignatureReader
             switch (type)
             {
                 case DBusType.Array:
-                    subReader = new SignatureReader(new StringSpan(_signature.Slice(1, length - 1)));
+                    subReader = new SignatureReader(_signature.Slice(1, length - 1));
                     break;
                 case DBusType.Struct:
                 case DBusType.DictEntry:
-                    subReader = new SignatureReader(new StringSpan(_signature.Slice(1, length - 2)));
+                    subReader = new SignatureReader(_signature.Slice(1, length - 2));
                     break;
             }
         }

@@ -11,14 +11,14 @@ public ref struct MessageReader
     public uint Serial { get; }
 
     // Header Fields
-    public StringSpan Path { get; }
-    public StringSpan Interface { get; }
-    public StringSpan Member { get; }
-    public StringSpan Error { get; }
+    public ReadOnlySpan<byte> Path { get; }
+    public ReadOnlySpan<byte> Interface { get; }
+    public ReadOnlySpan<byte> Member { get; }
+    public ReadOnlySpan<byte> Error { get; }
     public uint? ReplySerial { get; }
-    public StringSpan Destination { get; }
-    public StringSpan Sender { get; }
-    public StringSpan Signature { get; }
+    public ReadOnlySpan<byte> Destination { get; }
+    public ReadOnlySpan<byte> Sender { get; }
+    public ReadOnlySpan<byte> Signature { get; }
     public int UnixFds { get; }
 
     public MessageReader CloneAndRewind()
@@ -62,7 +62,7 @@ public ref struct MessageReader
         while (HasNext(headersEnd))
         {
             MessageHeader hdrType = (MessageHeader)ReadByte();
-            StringSpan sig = ReadSignature();
+            ReadOnlySpan<byte> sig = ReadSignature();
             switch (hdrType)
             {
                 case MessageHeader.Path:
@@ -135,7 +135,7 @@ public ref struct MessageReader
         return handle;
     }
 
-    public StringSpan ReadSignature()
+    public ReadOnlySpan<byte> ReadSignature()
     {
         int length = ReadByte();
 
@@ -143,7 +143,7 @@ public ref struct MessageReader
         if (span.Length <= length)
         {
             _reader.Advance(length + 1);
-            return new StringSpan(span.Slice(length));
+            return span.Slice(length);
         }
         else
         {
@@ -153,14 +153,14 @@ public ref struct MessageReader
                 throw new IndexOutOfRangeException();
             }
             _reader.Advance(length + 1);
-            return new StringSpan(buffer);
+            return new ReadOnlySpan<byte>(buffer);
         }
     }
-    public StringSpan ReadObjectPath() => ReadStringSpan();
+    public ReadOnlySpan<byte> ReadObjectPath() => ReadSpan();
 
-    public StringSpan ReadString() => ReadStringSpan();
+    public ReadOnlySpan<byte> ReadString() => ReadSpan();
 
-    private StringSpan ReadStringSpan()
+    private ReadOnlySpan<byte> ReadSpan()
     {
         int length = (int)ReadUInt32();
 
@@ -168,7 +168,7 @@ public ref struct MessageReader
         if (span.Length <= length)
         {
             _reader.Advance(length + 1);
-            return new StringSpan(span.Slice(length));
+            return span.Slice(length);
         }
         else
         {
@@ -178,7 +178,7 @@ public ref struct MessageReader
                 throw new IndexOutOfRangeException();
             }
             _reader.Advance(length + 1);
-            return new StringSpan(buffer);
+            return new ReadOnlySpan<byte>(buffer);
         }
     }
 

@@ -241,13 +241,13 @@ public ref struct MessageWriter
 
     public void WriteDouble(double value) => WritePrimitiveCore<double>(value, alignment: 8);
 
-    public void WriteString(StringSpan value) => WriteStringCore(value.Span);
+    public void WriteString(ReadOnlySpan<byte> value) => WriteStringCore(value);
 
     public void WriteString(string value) => WriteStringCore(value);
 
-    public void WriteSignature(StringSpan value)
+    public void WriteSignature(ReadOnlySpan<byte> value)
     {
-        ReadOnlySpan<byte> span = value.Span;
+        ReadOnlySpan<byte> span = value;
         int length = span.Length;
         WriteByte((byte)length);
         var dst = GetSpan(length);
@@ -266,7 +266,7 @@ public ref struct MessageWriter
         WriteByte(0);
     }
 
-    public void WriteObjectPath(StringSpan value) => WriteStringCore(value.Span);
+    public void WriteObjectPath(ReadOnlySpan<byte> value) => WriteStringCore(value);
 
     public void WriteObjectPath(string value) => WriteStringCore(value);
 
@@ -365,19 +365,19 @@ public ref struct MessageWriter
         WriteDouble(value);
     }
 
-    public void WriteVariantString(StringSpan value)
+    public void WriteVariantString(ReadOnlySpan<byte> value)
     {
         WriteSignature(ProtocolConstants.StringSignature);
         WriteString(value);
     }
 
-    public void WriteVariantSignature(StringSpan value)
+    public void WriteVariantSignature(ReadOnlySpan<byte> value)
     {
         WriteSignature(ProtocolConstants.SignatureSignature);
         WriteSignature(value);
     }
 
-    public void WriteVariantObjectPath(StringSpan value)
+    public void WriteVariantObjectPath(ReadOnlySpan<byte> value)
     {
         WriteSignature(ProtocolConstants.ObjectPathSignature);
         WriteObjectPath(value);

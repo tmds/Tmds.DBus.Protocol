@@ -16,27 +16,27 @@ static class ProtocolConstants
     private static ReadOnlySpan<byte> s_objectpathSignature => new byte[] { (byte)'o' };
     private static ReadOnlySpan<byte> s_signatureSignature => new byte[] { (byte)'g' };
 
-    public static StringSpan ByteSignature => new StringSpan(s_byteSignature);
-    public static StringSpan BooleanSignature => new StringSpan(s_booleanSignature);
-    public static StringSpan Int16Signature => new StringSpan(s_int16Signature);
-    public static StringSpan UInt16Signature => new StringSpan(s_uint16Signature);
-    public static StringSpan Int32Signature => new StringSpan(s_int32Signature);
-    public static StringSpan UInt32Signature => new StringSpan(s_uint32Signature);
-    public static StringSpan Int64Signature => new StringSpan(s_int64Signature);
-    public static StringSpan UInt64Signature => new StringSpan(s_uint64Signature);
-    public static StringSpan DoubleSignature => new StringSpan(s_doubleSignature);
-    public static StringSpan UnixFdSignature => new StringSpan(s_unixFdSignature);
-    public static StringSpan StringSignature => new StringSpan(s_stringSignature);
-    public static StringSpan ObjectPathSignature => new StringSpan(s_objectpathSignature);
-    public static StringSpan SignatureSignature => new StringSpan(s_signatureSignature);
+    public static ReadOnlySpan<byte> ByteSignature => (ReadOnlySpan<byte>)s_byteSignature;
+    public static ReadOnlySpan<byte> BooleanSignature => (ReadOnlySpan<byte>)s_booleanSignature;
+    public static ReadOnlySpan<byte> Int16Signature => (ReadOnlySpan<byte>)s_int16Signature;
+    public static ReadOnlySpan<byte> UInt16Signature => (ReadOnlySpan<byte>)s_uint16Signature;
+    public static ReadOnlySpan<byte> Int32Signature => (ReadOnlySpan<byte>)s_int32Signature;
+    public static ReadOnlySpan<byte> UInt32Signature => (ReadOnlySpan<byte>)s_uint32Signature;
+    public static ReadOnlySpan<byte> Int64Signature => (ReadOnlySpan<byte>)s_int64Signature;
+    public static ReadOnlySpan<byte> UInt64Signature => (ReadOnlySpan<byte>)s_uint64Signature;
+    public static ReadOnlySpan<byte> DoubleSignature => (ReadOnlySpan<byte>)s_doubleSignature;
+    public static ReadOnlySpan<byte> UnixFdSignature => (ReadOnlySpan<byte>)s_unixFdSignature;
+    public static ReadOnlySpan<byte> StringSignature => (ReadOnlySpan<byte>)s_stringSignature;
+    public static ReadOnlySpan<byte> ObjectPathSignature => (ReadOnlySpan<byte>)s_objectpathSignature;
+    public static ReadOnlySpan<byte> SignatureSignature => (ReadOnlySpan<byte>)s_signatureSignature;
 
-    public static int GetFirstTypeAlignment(StringSpan signature)
+    public static int GetFirstTypeAlignment(ReadOnlySpan<byte> signature)
     {
         if (signature.IsEmpty)
         {
             return 1;
         }
-        return GetTypeAlignment((DBusType)signature.Span[0]);
+        return GetTypeAlignment((DBusType)signature[0]);
     }
 
     public static int GetTypeAlignment(DBusType type)

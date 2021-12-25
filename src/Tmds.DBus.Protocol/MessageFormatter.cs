@@ -146,7 +146,7 @@ public class MessageFormatter
         }
     }
 
-    private static void Append(StringBuilder sb, string field, StringSpan value)
+    private static void Append(StringBuilder sb, string field, ReadOnlySpan<byte> value)
     {
         if (value.IsEmpty)
         {
@@ -158,17 +158,17 @@ public class MessageFormatter
         Append(sb, value);
     }
 
-    private static void Append(StringBuilder sb, StringSpan value)
+    private static void Append(StringBuilder sb, ReadOnlySpan<byte> value)
     {
         char[]? valueArray = null;
 
-        int length = Encoding.UTF8.GetCharCount(value.Span);
+        int length = Encoding.UTF8.GetCharCount(value);
 
         Span<char> charBuffer = length <= StackAllocCharThreshold ?
             stackalloc char[length] :
             (valueArray = ArrayPool<char>.Shared.Rent(length));
 
-        int charsWritten = Encoding.UTF8.GetChars(value.Span, charBuffer);
+        int charsWritten = Encoding.UTF8.GetChars(value, charBuffer);
 
         sb.Append(charBuffer.Slice(0, charsWritten));
 
