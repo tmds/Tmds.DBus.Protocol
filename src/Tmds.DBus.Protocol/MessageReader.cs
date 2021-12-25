@@ -34,7 +34,7 @@ public ref struct MessageReader
         _reader.Advance(Message.HeaderFieldsLengthOffset);
         uint headerFieldsLength = ReadUInt32();
         _reader.Advance(headerFieldsLength);
-        AlignReader(alignment: 8);
+        AlignReader(DBusType.Struct);
     }
 
     private MessageReader(ReadOnlySequence<byte> sequence, bool isBigEndian, MessageType type, MessageFlags flags, uint serial, UnixFdCollection? handles)
@@ -58,7 +58,7 @@ public ref struct MessageReader
         Signature = default;
         UnixFds = default;
 
-        ArrayEnd headersEnd = ReadArrayStart(alignment: 8);
+        ArrayEnd headersEnd = ReadArrayStart(DBusType.Struct);
         while (HasNext(headersEnd))
         {
             MessageHeader hdrType = (MessageHeader)ReadByte();
@@ -97,12 +97,12 @@ public ref struct MessageReader
                     throw new NotSupportedException();
             }
         }
-        AlignReader(8);
+        AlignReader(DBusType.Struct);
     }
 
     public uint ReadUInt32()
     {
-        AlignReader(4);
+        AlignReader(DBusType.UInt32);
         bool dataRead = _isBigEndian ? _reader.TryReadBigEndian(out int rv) : _reader.TryReadLittleEndian(out rv);
         if (!dataRead)
         {
@@ -182,38 +182,32 @@ public ref struct MessageReader
         }
     }
 
-    private void AlignReader(int alignment)
+    private void AlignReader(DBusType type)
     {
-        long pad = _reader.Consumed % alignment;
+        long pad = ProtocolConstants.GetPadding((int)_reader.Consumed, type);
         if (pad != 0)
         {
-            _reader.Advance(alignment - pad);
+            _reader.Advance(pad);
         }
     }
 
-    public ArrayEnd ReadArrayStart(int alignment)
+    public ArrayEnd ReadArrayStart(DBusType elementType)
     {
         uint arrayLength = ReadUInt32();
-        AlignReader(alignment);
+        AlignReader(elementType);
         int endOfArray = (int)(_reader.Consumed + arrayLength);
-        return new ArrayEnd(alignment, endOfArray);
+        return new ArrayEnd(elementType, endOfArray);
     }
 
     public bool HasNext(ArrayEnd iterator)
     {
         int consumed = (int)_reader.Consumed;
-        int advance = 0;
-        int nextElement = consumed;
-        int pad = consumed % iterator.Aligmnent;
-        if (pad != 0)
-        {
-            advance = iterator.Aligmnent - pad;
-            nextElement += advance;
-        }
+        int nextElement = ProtocolConstants.Align(consumed, iterator.Type);
         if (nextElement >= iterator.EndOfArray)
         {
             return false;
         }
+        int advance = nextElement - consumed;
         if (advance != 0)
         {
             _reader.Advance(advance);
@@ -248,11 +242,7 @@ public ref struct MessageReader
             return false;
         }
 
-        uint pad = headerFieldLength % 8;
-        if (pad != 0)
-        {
-            headerFieldLength += (8u - pad);
-        }
+        headerFieldLength = (uint)ProtocolConstants.Align((int)headerFieldLength, DBusType.Struct);
 
         long totalLength = seqReader.Consumed + headerFieldLength + bodyLength;
 
@@ -284,12 +274,12 @@ public ref struct MessageReader
 
 public ref struct ArrayEnd
 {
-    internal readonly int Aligmnent;
+    internal readonly DBusType Type;
     internal readonly int EndOfArray;
 
-    internal ArrayEnd(int alignment, int endOfArray)
+    internal ArrayEnd(DBusType type, int endOfArray)
     {
-        Aligmnent = alignment;
+        Type = type;
         EndOfArray = endOfArray;
     }
 }

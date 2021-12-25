@@ -98,8 +98,7 @@ public class MessageFormatter
                     break;
                 case DBusType.Array:
                     sb.AppendLine("array  [");
-                    int alignment = ProtocolConstants.GetFirstTypeAlignment(innerSignature);
-                    ArrayEnd itEnd = msg.ReadArrayStart(alignment);
+                    ArrayEnd itEnd = msg.ReadArrayStart((DBusType)innerSignature[0]);
                     while (msg.HasNext(itEnd))
                     {
                         ReadData(sb, ref msg, innerSignature, indent + 2);

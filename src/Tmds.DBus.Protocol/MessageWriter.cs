@@ -193,7 +193,7 @@ public ref struct MessageWriter
     private void WriteHeaderEnd(ref ArrayStart start)
     {
         WriteArrayEnd(ref start);
-        WritePadding(8);
+        WritePadding(DBusType.Struct);
     }
 
     private ArrayStart WriteHeaderStart(MessageType type, MessageFlags flags)
@@ -208,7 +208,7 @@ public ref struct MessageWriter
         Debug.Assert(_offset == Message.SerialOffset + 4);
 
         // headers
-        ArrayStart start = WriteArrayStart(alignment: 8); // structs have 8-byte alignment.
+        ArrayStart start = WriteArrayStart(DBusType.Struct);
 
         // UnixFds
         WriteStructureStart();
@@ -225,21 +225,21 @@ public ref struct MessageWriter
 
     public void WriteBool(bool value) => WriteUInt32(value ? 1u : 0u);
 
-    public void WriteByte(byte value) => WritePrimitiveCore<Int16>(value, alignment: 1);
+    public void WriteByte(byte value) => WritePrimitiveCore<Int16>(value, DBusType.Byte);
 
-    public void WriteInt16(Int16 value) => WritePrimitiveCore<Int16>(value, alignment: 2);
+    public void WriteInt16(Int16 value) => WritePrimitiveCore<Int16>(value, DBusType.Int16);
 
-    public void WriteUInt16(UInt16 value) => WritePrimitiveCore<UInt16>(value, alignment: 2);
+    public void WriteUInt16(UInt16 value) => WritePrimitiveCore<UInt16>(value, DBusType.UInt16);
 
-    public void WriteInt32(Int32 value) => WritePrimitiveCore<Int32>(value, alignment: 4);
+    public void WriteInt32(Int32 value) => WritePrimitiveCore<Int32>(value, DBusType.Int32);
 
-    public void WriteUInt32(UInt32 value) => WritePrimitiveCore<UInt32>(value, alignment: 4);
+    public void WriteUInt32(UInt32 value) => WritePrimitiveCore<UInt32>(value, DBusType.UInt32);
 
-    public void WriteInt64(Int64 value) => WritePrimitiveCore<Int64>(value, alignment: 8);
+    public void WriteInt64(Int64 value) => WritePrimitiveCore<Int64>(value, DBusType.Int64);
 
-    public void WriteUInt64(UInt64 value) => WritePrimitiveCore<UInt64>(value, alignment: 8);
+    public void WriteUInt64(UInt64 value) => WritePrimitiveCore<UInt64>(value, DBusType.UInt64);
 
-    public void WriteDouble(double value) => WritePrimitiveCore<double>(value, alignment: 8);
+    public void WriteDouble(double value) => WritePrimitiveCore<double>(value, DBusType.Double);
 
     public void WriteString(ReadOnlySpan<byte> value) => WriteStringCore(value);
 
@@ -282,7 +282,7 @@ public ref struct MessageWriter
 
     private void WriteStringCore(string s)
     {
-        WritePadding(4);
+        WritePadding(DBusType.UInt32);
         Span<byte> lengthSpan = GetSpan(4);
         Advance(4);
         int bytesWritten = (int)Encoding.UTF8.GetBytes(s.AsSpan(), Writer);
@@ -291,12 +291,14 @@ public ref struct MessageWriter
         WriteByte(0);
     }
 
-    private void WritePrimitiveCore<T>(T value, int alignment)
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private void WritePrimitiveCore<T>(T value, DBusType type)
     {
-        WritePadding(alignment);
-        var span = GetSpan(alignment);
+        WritePadding(type);
+        int length = ProtocolConstants.GetFixedTypeLength(type);
+        var span = GetSpan(length);
         Unsafe.WriteUnaligned<T>(ref MemoryMarshal.GetReference(span), value);
-        Advance(alignment);
+        Advance(length);
     }
 
     public void WriteHandle(SafeHandle value)
@@ -401,14 +403,14 @@ public ref struct MessageWriter
         WriteObjectPath(value);
     }
 
-    public ArrayStart WriteArrayStart(int alignment)
+    public ArrayStart WriteArrayStart(DBusType elementType)
     {
         // Array length.
-        WritePadding(4);
+        WritePadding(DBusType.UInt32);
         Span<byte> lengthSpan = GetSpan(4);
         Advance(4);
 
-        WritePadding(alignment);
+        WritePadding(elementType);
 
         return new ArrayStart(lengthSpan, _offset);
     }
@@ -433,7 +435,7 @@ public ref struct MessageWriter
 
     public void WriteStructureStart()
     {
-        WritePadding(8);
+        WritePadding(DBusType.Struct);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -444,12 +446,11 @@ public ref struct MessageWriter
         _span = _span.Slice(count);
     }
 
-    private void WritePadding(int alignment)
+    private void WritePadding(DBusType type)
     {
-        int pad = _offset % alignment;
+        int pad = ProtocolConstants.GetPadding(_offset, type);
         if (pad != 0)
         {
-            pad = alignment - pad;
             GetSpan(pad).Slice(0, pad).Fill(0);
             Advance(pad);
         }
