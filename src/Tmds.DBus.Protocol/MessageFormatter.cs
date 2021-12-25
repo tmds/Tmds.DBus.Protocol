@@ -32,15 +32,16 @@ public class MessageFormatter
 
         // Body.
         int indent = 2;
-        ReadData(sb, ref msg, new SignatureReader(msg.Signature), indent);
+        ReadData(sb, ref msg, msg.Signature, indent);
 
         // Remove final newline.
         sb.Remove(sb.Length - Environment.NewLine.Length, Environment.NewLine.Length);
     }
 
-    private static void ReadData(StringBuilder sb, ref MessageReader msg, SignatureReader sigReader, int indent)
+    private static void ReadData(StringBuilder sb, ref MessageReader msg, ReadOnlySpan<byte> signature, int indent)
     {
-        while (sigReader.TryRead(out DBusType type, out SignatureReader innerReader))
+        var sigReader = new SignatureReader(signature);
+        while (sigReader.TryRead(out DBusType type, out ReadOnlySpan<byte> innerSignature))
         {
             if (type == DBusType.Invalid)
             {
@@ -97,30 +98,30 @@ public class MessageFormatter
                     break;
                 case DBusType.Array:
                     sb.AppendLine("array  [");
-                    int alignment = ProtocolConstants.GetFirstTypeAlignment(innerReader.Signature);
+                    int alignment = ProtocolConstants.GetFirstTypeAlignment(innerSignature);
                     ArrayEnd itEnd = msg.ReadArrayStart(alignment);
                     while (msg.HasNext(itEnd))
                     {
-                        ReadData(sb, ref msg, innerReader, indent + 2);
+                        ReadData(sb, ref msg, innerSignature, indent + 2);
                     }
                     sb.Append(' ', indent);
                     sb.AppendLine("]");
                     break;
                 case DBusType.Struct:
                     sb.AppendLine("struct (");
-                    ReadData(sb, ref msg, innerReader, indent + 2);
+                    ReadData(sb, ref msg, innerSignature, indent + 2);
                     sb.Append(' ', indent);
                     sb.AppendLine(")");
                     break;
                 case DBusType.Variant:
                     sb.AppendLine("var   ("); // TODO: merge with next line
-                    ReadData(sb, ref msg, new SignatureReader(msg.ReadSignature()), indent + 2);
+                    ReadData(sb, ref msg, msg.ReadSignature(), indent + 2);
                     sb.Append(' ', indent);
                     sb.AppendLine(")");
                     break;
                 case DBusType.DictEntry:
                     sb.AppendLine("dicte (");
-                    ReadData(sb, ref msg, innerReader, indent + 2);
+                    ReadData(sb, ref msg, innerSignature, indent + 2);
                     sb.Append(' ', indent);
                     sb.AppendLine(")");
                     break;

@@ -11,9 +11,9 @@ ref struct SignatureReader
         _signature = signature;
     }
 
-    public bool TryRead(out DBusType type, out SignatureReader subReader) // TODO: change to out ReadOnlySpan<byte>
+    public bool TryRead(out DBusType type, out  ReadOnlySpan<byte> innerSignature)
     {
-        subReader = default;
+        innerSignature = default;
 
         if (_signature.IsEmpty)
         {
@@ -28,11 +28,11 @@ ref struct SignatureReader
             switch (type)
             {
                 case DBusType.Array:
-                    subReader = new SignatureReader(_signature.Slice(1, length - 1));
+                    innerSignature = _signature.Slice(1, length - 1);
                     break;
                 case DBusType.Struct:
                 case DBusType.DictEntry:
-                    subReader = new SignatureReader(_signature.Slice(1, length - 2));
+                    innerSignature = _signature.Slice(1, length - 2);
                     break;
             }
         }
