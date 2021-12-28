@@ -160,6 +160,8 @@ public ref struct MessageReader
 
     public ReadOnlySpan<byte> ReadString() => ReadSpan();
 
+    public string ReadStringAsString() => Encoding.UTF8.GetString(ReadString());
+
     private ReadOnlySpan<byte> ReadSpan()
     {
         int length = (int)ReadUInt32();

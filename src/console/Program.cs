@@ -1,23 +1,17 @@
 ﻿using System.Text;
-using System.Buffers;
 using Tmds.DBus.Protocol;
 
 class Program
 {
-    private static uint _serial = 1;
     static async Task Main()
     {
-        using var stream = await MessageStream.ConnectAsync(Environment.GetEnvironmentVariable("DBUS_SESSION_BUS_ADDRESS"), "1000", true, default(CancellationToken));
+        var connection = new Connection();
 
-        stream.ReceiveMessages(ReceiveMessages, (object)null!);
-
-        using var rented = MessagePool.Shared.Rent();
-        var message = rented.Message;
-
-        WriteHello(message);
-
-        await stream.SendMessageAsync(message);
-
+        await connection.CallMethodAsync(
+            message: CreateHelloMessage(),
+            (Exception? exception, ref MessageReader reader, object state) => {
+                PrintMessage(reader);
+             }, null!);
 
         Console.WriteLine("Press any key to stop the application.");
         Console.WriteLine();
@@ -47,9 +41,11 @@ class Program
         Console.WriteLine(sb.ToString());
     }
 
-    private static void WriteHello(Message message)
+    private static Message CreateHelloMessage()
     {
-        // Write message.
+        var rented = MessagePool.Shared.Rent();
+        var message = rented.Message;
+
         MessageWriter writer = message.GetWriter();
         writer.WriteMethodCallHeader(
             destination: "org.freedesktop.DBus",
@@ -59,6 +55,6 @@ class Program
 
         writer.Flush();
 
-        message.SetSerial(_serial++);
+        return message;
     }
 }
