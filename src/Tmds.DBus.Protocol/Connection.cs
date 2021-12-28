@@ -5,6 +5,11 @@ public delegate void MethodReturnHandler(Exception? exception, ref MessageReader
 public class Connection : IDisposable
 {
     private static readonly Exception s_disposedSentinel = new ObjectDisposedException(typeof(Connection).FullName);
+    private static Connection? s_systemConnection;
+    private static Connection? s_sessionConnection;
+
+    public static Connection System => s_systemConnection ?? CreateConnection(ref s_systemConnection, Address.System);
+    public static Connection Session => s_sessionConnection ?? CreateConnection(ref s_sessionConnection, Address.Session);
 
     enum ConnectionState
     {
@@ -15,28 +20,55 @@ public class Connection : IDisposable
     }
 
     private readonly object _gate = new object();
+    private readonly ClientConnectionOptions _connectionOptions;
     private DBusConnection? _connection;
+    private CancellationTokenSource? _connectCts;
     private Task<DBusConnection>? _connectingTask;
+    private ClientSetupResult? _setupResult;
     private ConnectionState _state;
     private bool _disposed;
 
-    public async ValueTask ConnectAsync()
+    public Connection(string address) :
+        this(new ClientConnectionOptions(address))
+    { }
+
+    public Connection(ConnectionOptions connectionOptions)
     {
-        await ConnectCoreAsync();
+        if (connectionOptions == null)
+            throw new ArgumentNullException(nameof(connectionOptions));
+
+        _connectionOptions = (ClientConnectionOptions)connectionOptions;
     }
 
-    private ValueTask<DBusConnection> ConnectCoreAsync()
+    public async ValueTask ConnectAsync()
+    {
+        await ConnectCoreAsync(autoConnect: false);
+    }
+
+    private ValueTask<DBusConnection> ConnectCoreAsync(bool autoConnect = true)
     {
         lock (_gate)
         {
             ThrowHelper.ThrowIfDisposed(_disposed, this);
 
-            switch (_state)
+            ConnectionState state = _state;
+
+            if (state == ConnectionState.Connected)
             {
-                case ConnectionState.Connected:
-                    return ValueTask.FromResult(_connection!);
-                case ConnectionState.Connecting:
-                    return new ValueTask<DBusConnection>(_connectingTask!);
+                return ValueTask.FromResult(_connection!);
+            }
+
+            if (!_connectionOptions.AutoConnect)
+            {
+                if (autoConnect || _state != ConnectionState.Created)
+                {
+                    throw new InvalidOperationException("Can only connect once using an explicit call.");
+                }
+            }
+
+            if (state == ConnectionState.Connecting)
+            {
+                return new ValueTask<DBusConnection>(_connectingTask!);
             }
 
             _state = ConnectionState.Connecting;
@@ -53,10 +85,11 @@ public class Connection : IDisposable
         DBusConnection? connection = null;
         try
         {
-            string address = Environment.GetEnvironmentVariable("DBUS_SESSION_BUS_ADDRESS")!; // TODO
-            connection = _connection = new DBusConnection(address, this);
+            _connectCts = new();
+            _setupResult = await _connectionOptions.SetupAsync(_connectCts.Token);
+            connection = _connection = new DBusConnection(this);
 
-            await connection.ConnectAsync();
+            await connection.ConnectAsync(_setupResult.ConnectionAddress, _setupResult.UserId, _setupResult.SupportsFdPassing, _connectCts.Token);
 
             lock (_gate)
             {
@@ -65,6 +98,7 @@ public class Connection : IDisposable
                 if (_connection == connection)
                 {
                     _connectingTask = null;
+                    _connectCts = null;
                     _state = ConnectionState.Connected;
                 }
                 else
@@ -102,6 +136,8 @@ public class Connection : IDisposable
     internal void Disconnect(Exception disconnectReason, DBusConnection? trigger = null)
     {
         DBusConnection? connection;
+        ClientSetupResult? setupResult;
+        CancellationTokenSource? connectCts;
         lock (_gate)
         {
             if (trigger != null && trigger != _connection)
@@ -119,8 +155,13 @@ public class Connection : IDisposable
             _state = ConnectionState.Disconnected;
 
             connection = _connection;
+            setupResult = _setupResult;
+            connectCts = _connectCts;
+
             _connection = null;
             _connectingTask = null;
+            _setupResult = null;
+            _connectCts = null;
 
             if (connection != null)
             {
@@ -128,7 +169,12 @@ public class Connection : IDisposable
             }
         }
 
+        connectCts?.Cancel();
         connection?.Dispose();
+        if (setupResult != null)
+        {
+            _connectionOptions.Teardown(setupResult.TeardownToken);
+        }
     }
 
     public async ValueTask CallMethodAsync(Message message, MethodReturnHandler returnHandler, object state)
@@ -144,5 +190,23 @@ public class Connection : IDisposable
             throw;
         }
         await connection.CallMethodAsync(message, returnHandler, state);
+    }
+
+    private static Connection CreateConnection(ref Connection? field, string? address)
+    {
+        address = address ?? "unix:";
+        var connection = Volatile.Read(ref field);
+        if (connection is not null)
+        {
+            return connection;
+        }
+        var newConnection = new Connection(new ClientConnectionOptions(address) { AutoConnect = true });
+        connection = Interlocked.CompareExchange(ref field, newConnection, null);;
+        if (connection != null)
+        {
+            newConnection.Dispose();
+            return connection;
+        }
+        return newConnection;
     }
 }

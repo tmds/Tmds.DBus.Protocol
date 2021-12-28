@@ -16,10 +16,8 @@ class DBusConnection : IDisposable
     }
 
     private readonly object _gate = new object();
-    private readonly string _address;
     private readonly Connection _parentConnection;
     private readonly Dictionary<uint, (MethodReturnHandler, object)>? _methodReturnHandlers;
-    private readonly CancellationTokenSource _connectCts;
     private IMessageStream? _messageStream;
     private ConnectionState _state;
     private Exception? _disconnectReason;
@@ -32,21 +30,19 @@ class DBusConnection : IDisposable
         set => Interlocked.CompareExchange(ref _disconnectReason, value, null);
     }
 
-    public DBusConnection(string address, Connection parent)
+    public DBusConnection(Connection parent)
     {
-        _address = address;
         _parentConnection = parent;
-        _connectCts = new();
         _methodReturnHandlers = new();
     }
 
-    public async ValueTask ConnectAsync()
+    public async ValueTask ConnectAsync(string address, string? userId, bool supportsFdPassing, CancellationToken cancellationToken)
     {
         _state = ConnectionState.Connecting;
         Exception? firstException = null;
 
         AddressParser.AddressEntry addr = default;
-        while (AddressParser.TryGetNextEntry(_address, ref addr))
+        while (AddressParser.TryGetNextEntry(address, ref addr))
         {
             Socket? socket = null;
             EndPoint? endpoint = null;
@@ -76,7 +72,7 @@ class DBusConnection : IDisposable
 
             try
             {
-                await socket.ConnectAsync(endpoint!, _connectCts.Token).ConfigureAwait(false);
+                await socket.ConnectAsync(endpoint!, cancellationToken).ConfigureAwait(false);
 
                 MessageStream stream;
                 lock (_gate)
@@ -88,7 +84,7 @@ class DBusConnection : IDisposable
                     _messageStream = stream = new MessageStream(socket);
                 }
 
-                await stream.DoClientAuthAsync(guid, userId: "1000", supportsFdPassing: true).ConfigureAwait(false);
+                await stream.DoClientAuthAsync(guid, userId, supportsFdPassing).ConfigureAwait(false);
 
                 stream.ReceiveMessages(
                     (Exception? exception, ref MessageReader reader, DBusConnection connection) =>
@@ -119,7 +115,7 @@ class DBusConnection : IDisposable
             throw firstException;
         }
 
-        throw new ArgumentException("No addresses were found", nameof(_address));
+        throw new ArgumentException("No addresses were found", nameof(address));
     }
 
     private async Task<string?> GetLocalNameAsync()
@@ -203,7 +199,6 @@ class DBusConnection : IDisposable
 
         Exception disconnectReason = DisconnectReason;
 
-        _connectCts.Cancel();
         _messageStream?.Close(disconnectReason);
 
         if (_methodReturnHandlers != null)
