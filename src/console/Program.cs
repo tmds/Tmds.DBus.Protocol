@@ -5,7 +5,7 @@ class Program
 {
     static async Task Main()
     {
-        var connection = new Connection();
+        var connection = Connection.Session;
 
         await connection.CallMethodAsync(
             message: CreateHelloMessage(),
