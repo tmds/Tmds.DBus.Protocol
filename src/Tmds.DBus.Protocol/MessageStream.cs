@@ -1,5 +1,4 @@
 using System.IO.Pipelines ;
-using System.Net;
 using System.Net.Sockets;
 using System.Threading.Channels;
 
@@ -7,10 +6,9 @@ namespace Tmds.DBus.Protocol;
 
 #pragma warning disable VSTHRD100 // Avoid "async void" methods
 
-public class MessageStream : IMessageStream // TODO: make internal.
+class MessageStream : IMessageStream
 {
     private static readonly ReadOnlyMemory<byte> OneByteArray = new[] { (byte)0 };
-    private static readonly Exception s_disposedSentinel = new ObjectDisposedException(typeof(MessageStream).FullName);
     private readonly Socket _socket;
     private readonly UnixFdCollection? _fdCollection;
     private bool _supportsFdPassing;
@@ -25,65 +23,7 @@ public class MessageStream : IMessageStream // TODO: make internal.
 
     private Exception? _completionException;
 
-    public static async ValueTask<IMessageStream> ConnectAsync(string address, string? userId, bool supportsFdPassing, CancellationToken cancellationToken)
-    {
-        if (address is null)
-        {
-            throw new ArgumentNullException(address);
-        }
-
-        Exception? firstException = null;
-        AddressParser.AddressEntry addr = default;
-        while (AddressParser.TryGetNextEntry(address, ref addr))
-        {
-            Socket? socket = null;
-            EndPoint? endpoint = null;
-            Guid guid = default;
-            if (AddressParser.IsType(addr, "unix"))
-            {
-                AddressParser.ParseUnixProperties(addr, out string path, out guid);
-                socket = new Socket(AddressFamily.Unix, SocketType.Stream, ProtocolType.Unspecified);
-                endpoint = new UnixDomainSocketEndPoint(path);
-            }
-            else if (AddressParser.IsType(addr, "tcp"))
-            {
-                AddressParser.ParseTcpProperties(addr, out string host, out int? port, out guid);
-                if (!port.HasValue)
-                {
-                    throw new ArgumentException("port");
-                }
-                socket = new Socket(SocketType.Stream, ProtocolType.Tcp);
-                endpoint = new DnsEndPoint(host, port.Value);
-            }
-            if (socket is null)
-            {
-                continue;
-            }
-            try
-            {
-                await socket.ConnectAsync(endpoint!, cancellationToken).ConfigureAwait(false);
-                MessageStream transport = new MessageStream(socket);
-                transport.ReadFromSocketIntoPipe();
-                await transport.DoClientAuthAsync(guid, userId, supportsFdPassing).ConfigureAwait(false);
-                transport.ReadMessagesIntoSocket();
-                return transport;
-            }
-            catch (Exception exception)
-            {
-                socket.Dispose();
-                firstException ??= exception;
-            }
-        }
-
-        if (firstException != null)
-        {
-            throw firstException;
-        }
-
-        throw new ArgumentException("No addresses were found", nameof(address));
-    }
-
-    private MessageStream(Socket socket)
+    public MessageStream(Socket socket)
     {
         _socket = socket;
         Channel<Message> channel = Channel.CreateUnbounded<Message>(); // TODO: review options.
@@ -154,7 +94,7 @@ public class MessageStream : IMessageStream // TODO: make internal.
             }
             catch (Exception exception)
             {
-                Complete(exception);
+                Close(exception);
                 return;
             }
             finally
@@ -181,7 +121,7 @@ public class MessageStream : IMessageStream // TODO: make internal.
         }
         catch (Exception exception)
         {
-            exception = Complete(exception);
+            exception = CloseCore(exception);
             OnException(exception, handler, state);
         }
         finally
@@ -193,7 +133,7 @@ public class MessageStream : IMessageStream // TODO: make internal.
         {
             while (MessageReader.TryReadMessage(ref buffer, out MessageReader reader, fdCollection))
             {
-                handler(exception: null, ref reader, state);
+                handler(closeReason: null, ref reader, state);
             }
         }
 
@@ -211,8 +151,10 @@ public class MessageStream : IMessageStream // TODO: make internal.
         public Guid Guid;
     }
 
-    private async ValueTask DoClientAuthAsync(Guid guid, string? userId, bool supportsFdPassing)
+    public async ValueTask DoClientAuthAsync(Guid guid, string? userId, bool supportsFdPassing)
     {
+        ReadFromSocketIntoPipe();
+
         // send 1 byte
         await _socket.SendAsync(OneByteArray, SocketFlags.None).ConfigureAwait(false);
         // auth
@@ -225,6 +167,8 @@ public class MessageStream : IMessageStream // TODO: make internal.
                 throw new ConnectException("Authentication failure: Unexpected GUID");
             }
         }
+
+        ReadMessagesIntoSocket();
     }
 
     private async ValueTask<AuthenticationResult> SendAuthCommandsAsync(string? userId, bool supportsFdPassing)
@@ -398,43 +342,27 @@ public class MessageStream : IMessageStream // TODO: make internal.
         }
     }
 
-    public void Dispose()
-    {
-        if (Volatile.Read(ref _completionException) == null)
-        {
-            Complete(s_disposedSentinel);
-        }
-    }
-
-    public async ValueTask SendMessageAsync(Message message)
+    public async ValueTask<bool> TrySendMessageAsync(Message message)
     {
         while (await _messageWriter.WaitToWriteAsync().ConfigureAwait(false))
         {
             if (_messageWriter.TryWrite(message))
-                return;
+                return true;
         }
 
-        message.ReturnToPool();
-
-        Exception completionException = Volatile.Read(ref _completionException)!;
-        if (completionException == s_disposedSentinel)
-        {
-            throw new ObjectDisposedException(typeof(MessageStream).FullName);
-        }
-        else
-        {
-            throw new DisconnectedException(completionException);
-        }
+        return false;
     }
 
-    private Exception Complete(Exception exception)
+    public void Close(Exception closeReason) => CloseCore(closeReason);
+
+    private Exception CloseCore(Exception closeReason)
     {
-        Exception? previous = Interlocked.CompareExchange(ref _completionException, exception, null);
+        Exception? previous = Interlocked.CompareExchange(ref _completionException, closeReason, null);
         if (previous == null)
         {
             _socket?.Dispose();
             _messageWriter.Complete();
         }
-        return previous ?? exception;
+        return previous ?? closeReason;
     }
 }
