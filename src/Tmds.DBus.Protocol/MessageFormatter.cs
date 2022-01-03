@@ -2,9 +2,9 @@ namespace Tmds.DBus.Protocol;
 
 public class MessageFormatter
 {
-    public static void FormatMessage(ref MessageReader messageReader, StringBuilder sb)
+    public static void FormatMessage(MessageReader msg, StringBuilder sb)
     {
-        MessageReader msg = messageReader.CloneAndRewind();
+        msg.Rewind();
 
         // Header.
         Append(sb, msg.Type);
@@ -15,7 +15,7 @@ public class MessageFormatter
             sb.Append(" rserial=");
             sb.Append(msg.ReplySerial.Value);
         }
-        Append(sb, " err", msg.Error);
+        Append(sb, " err", msg.ErrorName);
         Append(sb, " path", msg.Path);
         Append(sb, " memb", msg.Member);
         Append(sb, " body", msg.Signature);
@@ -38,7 +38,7 @@ public class MessageFormatter
         sb.Remove(sb.Length - Environment.NewLine.Length, Environment.NewLine.Length);
     }
 
-    private static void ReadData(StringBuilder sb, ref MessageReader msg, ReadOnlySpan<byte> signature, int indent)
+    private static void ReadData(StringBuilder sb, ref MessageReader msg, Utf8Span signature, int indent)
     {
         var sigReader = new SignatureReader(signature);
         while (sigReader.TryRead(out DBusType type, out ReadOnlySpan<byte> innerSignature))
@@ -83,17 +83,17 @@ public class MessageFormatter
                     break;
                 case DBusType.String:
                     sb.Append("string ");
-                    Append(sb, msg.ReadString()); // TODO: handle long strings without allocating.
+                    sb.AppendUTF8(msg.ReadString()); // TODO: handle long strings without allocating.
                     sb.AppendLine();
                     break;
                 case DBusType.ObjectPath:
                     sb.Append("path   ");
-                    Append(sb, msg.ReadObjectPath()); // TODO: handle long strings without allocating.
+                    sb.AppendUTF8(msg.ReadObjectPath()); // TODO: handle long strings without allocating.
                     sb.AppendLine();
                     break;
                 case DBusType.Signature:
                     sb.Append("sig    ");
-                    Append(sb, msg.ReadSignature());
+                    sb.AppendUTF8(msg.ReadSignature());
                     sb.AppendLine();
                     break;
                 case DBusType.Array:
@@ -146,7 +146,7 @@ public class MessageFormatter
         }
     }
 
-    private static void Append(StringBuilder sb, string field, ReadOnlySpan<byte> value)
+    private static void Append(StringBuilder sb, string field, Utf8Span value)
     {
         if (value.IsEmpty)
         {
@@ -155,29 +155,6 @@ public class MessageFormatter
 
         sb.Append(field);
         sb.Append('=');
-        Append(sb, value);
+        sb.AppendUTF8(value);
     }
-
-    private static void Append(StringBuilder sb, ReadOnlySpan<byte> value)
-    {
-        char[]? valueArray = null;
-
-        int length = Encoding.UTF8.GetCharCount(value);
-
-        Span<char> charBuffer = length <= StackAllocCharThreshold ?
-            stackalloc char[length] :
-            (valueArray = ArrayPool<char>.Shared.Rent(length));
-
-        int charsWritten = Encoding.UTF8.GetChars(value, charBuffer);
-
-        sb.Append(charBuffer.Slice(0, charsWritten));
-
-        if (valueArray != null)
-        {
-            ArrayPool<char>.Shared.Return(valueArray);
-        }
-    }
-
-    private const int StackAllocByteThreshold = 512;
-    private const int StackAllocCharThreshold = StackAllocByteThreshold / 2;
 }

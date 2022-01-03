@@ -71,7 +71,7 @@ public class Message
         Unsafe.WriteUnaligned<uint>(ref MemoryMarshal.GetReference(span.Slice(LengthOffset)), length);
 
         // UnixFdLength
-        Unsafe.WriteUnaligned<uint>(ref MemoryMarshal.GetReference(span.Slice(UnixFdLengthOffset)), _handles == null ? 0 : (uint)_handles.Count);
+        Unsafe.WriteUnaligned<uint>(ref MemoryMarshal.GetReference(span.Slice(UnixFdLengthOffset)), _handles is null ? 0 : (uint)_handles.Count);
     }
 
     public ReadOnlySequence<byte> AsReadOnlySequence()

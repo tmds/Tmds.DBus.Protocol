@@ -9,7 +9,7 @@ static class SocketExtensions
 {
     public static ValueTask<int> ReceiveAsync(this Socket socket, Memory<byte> memory, UnixFdCollection? fdCollection)
     {
-        if (fdCollection == null)
+        if (fdCollection is null)
         {
             return socket.ReceiveAsync(memory, SocketFlags.None);
         }
@@ -46,7 +46,7 @@ static class SocketExtensions
 
     public static ValueTask SendAsync(this Socket socket, ReadOnlyMemory<byte> buffer, IReadOnlyList<SafeHandle>? handles)
     {
-        if (handles == null || handles.Count == 0)
+        if (handles is null || handles.Count == 0)
         {
             return socket.SendAsync(buffer);
         }

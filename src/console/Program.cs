@@ -1,4 +1,5 @@
-﻿using System.Text;
+﻿using System;
+using System.Text;
 using Tmds.DBus.Protocol;
 
 class Program
@@ -7,11 +8,18 @@ class Program
     {
         var connection = Connection.Session;
 
+        await connection.AddMatchAsync(new MatchRule
+        {
+            Type = MessageType.Signal,
+            Member = "NameOwnerChanged"
+        }, OnNameOwnerChanged);
+
         await connection.CallMethodAsync(
             message: CreateHelloMessage(),
-            (Exception? exception, ref MessageReader reader, object state) => {
+            (Exception? exception, ref MessageReader reader, object? state) =>
+            {
                 PrintMessage(reader);
-             }, null!);
+            });
 
         Console.WriteLine("Press any key to stop the application.");
         Console.WriteLine();
@@ -19,9 +27,15 @@ class Program
         Console.ReadLine();
     }
 
-    private static void ReceiveMessages(Exception? exception, ref MessageReader reader, object state)
+    private static void OnNameOwnerChanged(Exception? exception, ref MessageReader reader, object? state)
     {
-        if (exception != null)
+        Console.WriteLine("NameOwnerChanged:");
+        PrintMessage(reader);
+    }
+
+    private static void ReceiveMessages(Exception? exception, ref MessageReader reader, object? state)
+    {
+        if (exception is not null)
         {
             if (exception is not ObjectDisposedException)
             {
@@ -37,7 +51,7 @@ class Program
     private static void PrintMessage(MessageReader reader)
     {
         StringBuilder sb = new();
-        MessageFormatter.FormatMessage(ref reader, sb);
+        MessageFormatter.FormatMessage(reader, sb);
         Console.WriteLine(sb.ToString());
     }
 
