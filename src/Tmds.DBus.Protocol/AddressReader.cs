@@ -1,3 +1,5 @@
+namespace Tmds.DBus.Protocol;
+
 static class AddressParser
 {
     public struct AddressEntry
@@ -16,7 +18,7 @@ static class AddressParser
 
     public static bool TryGetNextEntry(string addresses, ref AddressEntry address)
     {
-        if (address.String == null)
+        if (address.String is null)
         {
             address = new AddressEntry(addresses, 0, 0);
         }
@@ -61,7 +63,7 @@ static class AddressParser
                 guid = Guid.ParseExact(Unescape(value), "N");
             }
         }
-        if (host == null)
+        if (host is null)
         {
             host = "localhost";
         }
@@ -146,7 +148,7 @@ static class AddressParser
         {
             return new string(value);
         }
-        Span<char> unescaped = stackalloc char[256];
+        Span<char> unescaped = stackalloc char[Constants.StackAllocCharThreshold];
         int pos = 0;
         for (int i = 0; i < value.Length;)
         {

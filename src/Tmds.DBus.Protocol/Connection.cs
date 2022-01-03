@@ -1,6 +1,7 @@
 namespace Tmds.DBus.Protocol;
 
-public delegate void MethodReturnHandler(Exception? exception, ref MessageReader reader, object state);
+public delegate void MessageReceivedHandler(Exception? exception, ref MessageReader reader, object? state);
+public delegate T MethodReturnHandler<T>(ref MessageReader reader);
 
 public class Connection : IDisposable
 {
@@ -140,7 +141,7 @@ public class Connection : IDisposable
         CancellationTokenSource? connectCts;
         lock (_gate)
         {
-            if (trigger != null && trigger != _connection)
+            if (trigger is not null && trigger != _connection)
             {
                 // Already disconnected from this stream.
                 return;
@@ -163,7 +164,7 @@ public class Connection : IDisposable
             _setupResult = null;
             _connectCts = null;
 
-            if (connection != null)
+            if (connection is not null)
             {
                 connection.DisconnectReason = disconnectReason;
             }
@@ -177,7 +178,7 @@ public class Connection : IDisposable
         }
     }
 
-    public async ValueTask CallMethodAsync(Message message, MethodReturnHandler returnHandler, object state)
+    public async ValueTask CallMethodAsync(Message message, MessageReceivedHandler handler, object? state = null)
     {
         DBusConnection connection;
         try
@@ -189,7 +190,13 @@ public class Connection : IDisposable
             message.ReturnToPool();
             throw;
         }
-        await connection.CallMethodAsync(message, returnHandler, state);
+        await connection.CallMethodAsync(message, handler, state);
+    }
+
+    public async ValueTask<IDisposable> AddMatchAsync(MatchRule rule, MessageReceivedHandler handler, object? state = null, bool subscribe = true)
+    {
+        DBusConnection connection = await ConnectCoreAsync();
+        return await connection.AddMatchAsync(rule, handler, state, subscribe);
     }
 
     private static Connection CreateConnection(ref Connection? field, string? address)

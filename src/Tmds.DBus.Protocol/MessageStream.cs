@@ -174,7 +174,7 @@ class MessageStream : IMessageStream
     private async ValueTask<AuthenticationResult> SendAuthCommandsAsync(string? userId, bool supportsFdPassing)
     {
         AuthenticationResult result;
-        if (userId != null)
+        if (userId is not null)
         {
             const string AuthExternal = "AUTH EXTERNAL ";
             string command = string.Create<string>(
@@ -358,7 +358,7 @@ class MessageStream : IMessageStream
     private Exception CloseCore(Exception closeReason)
     {
         Exception? previous = Interlocked.CompareExchange(ref _completionException, closeReason, null);
-        if (previous == null)
+        if (previous is null)
         {
             _socket?.Dispose();
             _messageWriter.Complete();

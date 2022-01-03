@@ -11,24 +11,17 @@ public ref struct MessageReader
     public uint Serial { get; }
 
     // Header Fields
-    public ReadOnlySpan<byte> Path { get; }
-    public ReadOnlySpan<byte> Interface { get; }
-    public ReadOnlySpan<byte> Member { get; }
-    public ReadOnlySpan<byte> Error { get; }
+    public Utf8Span Path { get; }
+    public Utf8Span Interface { get; }
+    public Utf8Span Member { get; }
+    public Utf8Span ErrorName { get; }
     public uint? ReplySerial { get; }
-    public ReadOnlySpan<byte> Destination { get; }
-    public ReadOnlySpan<byte> Sender { get; }
-    public ReadOnlySpan<byte> Signature { get; }
+    public Utf8Span Destination { get; }
+    public Utf8Span Sender { get; }
+    public Utf8Span Signature { get; }
     public int UnixFds { get; }
 
-    public MessageReader CloneAndRewind()
-    {
-        MessageReader reader = this;
-        reader.Rewind();
-        return reader;
-    }
-
-    private void Rewind()
+    public void Rewind()
     {
         _reader = new SequenceReader<byte>(_reader.Sequence);
         _reader.Advance(Message.HeaderFieldsLengthOffset);
@@ -51,7 +44,7 @@ public ref struct MessageReader
         Path = default;
         Interface = default;
         Member = default;
-        Error = default;
+        ErrorName = default;
         ReplySerial = default;
         Destination = default;
         Sender = default;
@@ -75,7 +68,7 @@ public ref struct MessageReader
                     Member = ReadString();
                     break;
                 case MessageHeader.ErrorName:
-                    Error = ReadString();
+                    ErrorName = ReadString();
                     break;
                 case MessageHeader.ReplySerial:
                     ReplySerial = ReadUInt32();
@@ -124,7 +117,7 @@ public ref struct MessageReader
     {
         int idx = (int)ReadUInt32();
         IntPtr handle = (IntPtr)(-1);
-        if (_handles != null)
+        if (_handles is not null)
         {
             (handle, bool dispose) = _handles[idx];
             if (own)
@@ -135,7 +128,7 @@ public ref struct MessageReader
         return handle;
     }
 
-    public ReadOnlySpan<byte> ReadSignature()
+    public Utf8Span ReadSignature()
     {
         int length = ReadByte();
 
@@ -156,9 +149,9 @@ public ref struct MessageReader
             return new ReadOnlySpan<byte>(buffer);
         }
     }
-    public ReadOnlySpan<byte> ReadObjectPath() => ReadSpan();
+    public Utf8Span ReadObjectPath() => ReadSpan();
 
-    public ReadOnlySpan<byte> ReadString() => ReadSpan();
+    public Utf8Span ReadString() => ReadSpan();
 
     public string ReadStringAsString() => Encoding.UTF8.GetString(ReadString());
 
