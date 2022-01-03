@@ -95,8 +95,8 @@ class DBusConnection : IDisposable
                 await stream.DoClientAuthAsync(guid, userId, supportsFdPassing).ConfigureAwait(false);
 
                 stream.ReceiveMessages(
-                    (Exception? exception, ref MessageReader reader, DBusConnection connection) =>
-                        connection.HandleMessages(exception, ref reader), this);
+                    (Exception? exception, ref Message message, DBusConnection connection) =>
+                        connection.HandleMessages(exception, ref message), this);
 
                 lock (_gate)
                 {
@@ -132,7 +132,7 @@ class DBusConnection : IDisposable
 
         await CallMethodAsync(
             message: CreateHelloMessage(),
-            (Exception? exception, ref MessageReader reader, object? state) =>
+            (Exception? exception, ref Message message, object? state) =>
             {
                 var tcsState = (TaskCompletionSource<string?>)state!;
 
@@ -140,9 +140,9 @@ class DBusConnection : IDisposable
                 {
                     tcsState.SetException(exception);
                 }
-                else if (reader.Type == MessageType.MethodReturn)
+                else if (message.Type == MessageType.MethodReturn)
                 {
-                    tcsState.SetResult(reader.ReadStringAsString());
+                    tcsState.SetResult(message.GetBodyReader().ReadStringAsString());
                 }
                 else
                 {
@@ -152,12 +152,9 @@ class DBusConnection : IDisposable
 
         return await tcs.Task;
 
-        static Message CreateHelloMessage()
+        MessageBuffer CreateHelloMessage()
         {
-            var rented = MessagePool.Shared.Rent();
-            var message = rented.Message;
-
-            MessageWriter writer = message.GetWriter();
+            MessageWriter writer = GetMessageWriter();
 
             writer.WriteMethodCallHeader(
                 destination: "org.freedesktop.DBus",
@@ -165,13 +162,11 @@ class DBusConnection : IDisposable
                 @interface: "org.freedesktop.DBus",
                 member: "Hello");
 
-            writer.Flush();
-
-            return message;
+            return writer.CreateMessage();
         }
     }
 
-    private void HandleMessages(Exception? exception, ref MessageReader reader)
+    private void HandleMessages(Exception? exception, ref Message message)
     {
         if (exception is not null)
         {
@@ -188,14 +183,14 @@ class DBusConnection : IDisposable
                     return;
                 }
 
-                if (reader.ReplySerial.HasValue)
+                if (message.ReplySerial.HasValue)
                 {
-                    _pendingCalls.Remove(reader.ReplySerial.Value, out pendingCall);
+                    _pendingCalls.Remove(message.ReplySerial.Value, out pendingCall);
                 }
 
                 foreach (var matchMaker in _matchMakers.Values)
                 {
-                    if (matchMaker.Matches(reader))
+                    if (matchMaker.Matches(message))
                     {
                         _matchedObservers.AddRange(matchMaker.Observers);
                     }
@@ -204,13 +199,13 @@ class DBusConnection : IDisposable
 
             foreach (var observer in _matchedObservers)
             {
-                observer.Emit(ref reader);
+                observer.Emit(ref message);
             }
             _matchedObservers.Clear();
 
             if (pendingCall.handler is not null)
             {
-                pendingCall.handler(null, ref reader, pendingCall.state!);
+                pendingCall.handler(null, ref message, pendingCall.state!);
             }
         }
     }
@@ -232,10 +227,10 @@ class DBusConnection : IDisposable
 
         if (_pendingCalls is not null)
         {
-            MessageReader reader = default;
+            Message message = default;
             foreach (var handler in _pendingCalls.Values)
             {
-                handler.Item1.Invoke(new DisconnectedException(disconnectReason), ref reader, handler.Item2);
+                handler.Item1.Invoke(new DisconnectedException(disconnectReason), ref message, handler.Item2);
             }
             _pendingCalls.Clear();
         }
@@ -253,7 +248,7 @@ class DBusConnection : IDisposable
         }
     }
 
-    public async ValueTask CallMethodAsync(Message message, MessageReceivedHandler returnHandler, object? state)
+    public async ValueTask CallMethodAsync(MessageBuffer message, MessageReceivedHandler returnHandler, object? state)
     {
         bool messageSent = false;
         try
@@ -283,13 +278,13 @@ class DBusConnection : IDisposable
         }
     }
 
-    public async Task<T> CallMethodAsync<T>(Message message, MethodReturnHandler<T> returnHandler, bool runContinuationsAsync = true)
+    public async Task<T> CallMethodAsync<T>(MessageBuffer message, MethodReturnHandler<T> returnHandler, bool runContinuationsAsync = true)
     {
         TaskCompletionSource<T> tcs = new(runContinuationsAsync ? TaskCreationOptions.RunContinuationsAsynchronously : TaskCreationOptions.None);
 
         await CallMethodAsync(
             message,
-            (Exception? exception, ref MessageReader reader, object? state) =>
+            (Exception? exception, ref Message message, object? state) =>
             {
                 var tcsState = (TaskCompletionSource<T>)state!;
 
@@ -297,40 +292,40 @@ class DBusConnection : IDisposable
                 {
                     tcsState.SetException(exception);
                 }
-                else if (reader.Type == MessageType.MethodReturn)
+                else if (message.Type == MessageType.MethodReturn)
                 {
-                    tcsState.SetResult(returnHandler(ref reader));
+                    tcsState.SetResult(returnHandler(ref message));
                 }
-                else if (reader.Type == MessageType.Error)
+                else if (message.Type == MessageType.Error)
                 {
-                    string errorName = reader.ErrorName.ToString();
-                    string message = errorName;
-                    if (!reader.Signature.IsEmpty && (DBusType)reader.Signature.Span[0] == DBusType.String)
+                    string errorName = message.ErrorName.ToString();
+                    string errMessage = errorName;
+                    if (!message.Signature.IsEmpty && (DBusType)message.Signature.Span[0] == DBusType.String)
                     {
-                        message = reader.ReadStringAsString();
+                        errMessage = message.GetBodyReader().ReadStringAsString();
                     }
-                    tcsState.SetException(new DBusException(errorName, message));
+                    tcsState.SetException(new DBusException(errorName, errMessage));
                 }
                 else
                 {
-                    tcsState.SetException(new ProtocolException($"Unexpected reply type: {reader.Type}."));
+                    tcsState.SetException(new ProtocolException($"Unexpected reply type: {message.Type}."));
                 }
             }, tcs);
 
         return await tcs.Task;
     }
 
-    public async Task CallMethodAsync(Message message, bool runContinuationsAsync = true)
+    public async Task CallMethodAsync(MessageBuffer message, bool runContinuationsAsync = true)
     {
         TaskCompletionSource tcs = new(runContinuationsAsync ? TaskCreationOptions.RunContinuationsAsynchronously : TaskCreationOptions.None);
 
         await CallMethodAsync(message,
-            (Exception? exception, ref MessageReader reader, object? state) => CompleteCallTaskCompletionSource(exception, ref reader, state), tcs);
+            (Exception? exception, ref Message message, object? state) => CompleteCallTaskCompletionSource(exception, ref message, state), tcs);
 
         await tcs.Task;
     }
 
-    private static void CompleteCallTaskCompletionSource(Exception? exception, ref MessageReader reader, object? state)
+    private static void CompleteCallTaskCompletionSource(Exception? exception, ref Message message, object? state)
     {
         var tcsState = (TaskCompletionSource)state!;
 
@@ -338,23 +333,23 @@ class DBusConnection : IDisposable
         {
             tcsState.SetException(exception);
         }
-        else if (reader.Type == MessageType.MethodReturn)
+        else if (message.Type == MessageType.MethodReturn)
         {
             tcsState.SetResult();
         }
-        else if (reader.Type == MessageType.Error)
+        else if (message.Type == MessageType.Error)
         {
-            string errorName = reader.ErrorName.ToString();
-            string message = errorName;
-            if (!reader.Signature.IsEmpty && (DBusType)reader.Signature.Span[0] == DBusType.String)
+            string errorName = message.ErrorName.ToString();
+            string errMessage = errorName;
+            if (!message.Signature.IsEmpty && (DBusType)message.Signature.Span[0] == DBusType.String)
             {
-                message = reader.ReadStringAsString();
+                errMessage = message.GetBodyReader().ReadStringAsString();
             }
-            tcsState.SetException(new DBusException(errorName, message));
+            tcsState.SetException(new DBusException(errorName, errMessage));
         }
         else
         {
-            tcsState.SetException(new ProtocolException($"Unexpected reply type: {reader.Type}."));
+            tcsState.SetException(new ProtocolException($"Unexpected reply type: {message.Type}."));
         }
     }
 
@@ -383,7 +378,7 @@ class DBusConnection : IDisposable
 
             if (!_matchMakers.TryGetValue(ruleString, out matchMaker))
             {
-                matchMaker = new MatchMaker(this, ruleString, in data);
+                matchMaker = new MatchMaker(this, ruleString, data);
                 _matchMakers.Add(ruleString, matchMaker);
             }
 
@@ -397,8 +392,8 @@ class DBusConnection : IDisposable
                 matchMaker.AddMatchTcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
                 nextSerial = ++_nextSerial;
 
-                MessageReceivedHandler receiveHandler = static (Exception? exception, ref MessageReader reader, object? state)
-                                                            => HandleReply(exception, ref reader, (MatchMaker)state!);
+                MessageReceivedHandler receiveHandler = static (Exception? exception, ref Message message, object? state)
+                                                            => HandleReply(exception, ref message, (MatchMaker)state!);
 
                 _pendingCalls.Add(nextSerial, (receiveHandler, matchMaker));
             }
@@ -430,21 +425,18 @@ class DBusConnection : IDisposable
 
         return observer;
 
-        static void HandleReply(Exception? exception, ref MessageReader reader, MatchMaker mm)
+        static void HandleReply(Exception? exception, ref Message message, MatchMaker mm)
         {
-            if (reader.Type == MessageType.MethodReturn)
+            if (message.Type == MessageType.MethodReturn)
             {
                 mm.HasSubscribed = true;
             }
-            CompleteCallTaskCompletionSource(exception, ref reader, mm.AddMatchTcs!);
+            CompleteCallTaskCompletionSource(exception, ref message, mm.AddMatchTcs!);
         }
 
-        static Message CreateAddMatchMessage(string ruleString)
+        MessageBuffer CreateAddMatchMessage(string ruleString)
         {
-            var rented = MessagePool.Shared.Rent();
-            var message = rented.Message;
-
-            MessageWriter writer = message.GetWriter();
+            MessageWriter writer = GetMessageWriter();
 
             writer.WriteMethodCallHeader(
                 destination: "org.freedesktop.DBus",
@@ -455,9 +447,7 @@ class DBusConnection : IDisposable
 
             writer.WriteString(ruleString);
 
-            writer.Flush();
-
-            return message;
+            return writer.CreateMessage();
         }
     }
 
@@ -489,15 +479,15 @@ class DBusConnection : IDisposable
                 }
                 _disposed = true;
 
-                MessageReader reader = default;
+                Message message = default;
                 // TODO: signal Dispose without allocating an Exception?
-                _messageHandler(new ObjectDisposedException(GetType().FullName), ref reader, _state);
+                _messageHandler(new ObjectDisposedException(GetType().FullName), ref message, _state);
             }
 
             _matchMaker.Connection.RemoveObserver(_matchMaker, this);
         }
 
-        public void Emit(ref MessageReader reader)
+        public void Emit(ref Message message)
         {
             if (Subscribes && !_matchMaker.HasSubscribed)
             {
@@ -511,7 +501,7 @@ class DBusConnection : IDisposable
                     return;
                 }
 
-                _messageHandler(null, ref reader, _state);
+                _messageHandler(null, ref message, _state);
             }
         }
 
@@ -525,8 +515,8 @@ class DBusConnection : IDisposable
                 }
                 _disposed = true;
 
-                MessageReader reader = default;
-                _messageHandler(disconnectedException, ref reader, _state);
+                Message message = default;
+                _messageHandler(disconnectedException, ref message, _state);
             }
         }
     }
@@ -558,7 +548,7 @@ class DBusConnection : IDisposable
 
         if (sendMessage)
         {
-            var message = CreateRemoveMatchMessage(ruleString);
+            var message = CreateRemoveMatchMessage();
             message.SetSerial(nextSerial);
 
             if (!await _messageStream!.TrySendMessageAsync(message))
@@ -567,12 +557,9 @@ class DBusConnection : IDisposable
             }
         }
 
-        static Message CreateRemoveMatchMessage(string ruleString)
+        MessageBuffer CreateRemoveMatchMessage()
         {
-            var rented = MessagePool.Shared.Rent();
-            var message = rented.Message;
-
-            MessageWriter writer = message.GetWriter();
+            MessageWriter writer = GetMessageWriter();
 
             writer.WriteMethodCallHeader(
                 destination: "org.freedesktop.DBus",
@@ -584,9 +571,7 @@ class DBusConnection : IDisposable
 
             writer.WriteString(ruleString);
 
-            writer.Flush();
-
-            return message;
+            return writer.CreateMessage();
         }
     }
 
@@ -680,39 +665,39 @@ class DBusConnection : IDisposable
 
         public override string ToString() => _rule;
 
-        internal bool Matches(MessageReader reader) // TODO: 'in' arg
+        internal bool Matches(in Message message) // TODO: 'in' arg
         {
-            if (_type.HasValue && _type != reader.Type)
+            if (_type.HasValue && _type != message.Type)
             {
                 return false;
             }
 
-            if (_sender is not null && !reader.Sender.Span.SequenceEqual(_sender))
+            if (_sender is not null && !message.Sender.Span.SequenceEqual(_sender))
             {
                 return false;
             }
 
-            if (_interface is not null && !reader.Interface.Span.SequenceEqual(_interface))
+            if (_interface is not null && !message.Interface.Span.SequenceEqual(_interface))
             {
                 return false;
             }
 
-            if (_member is not null && !reader.Member.Span.SequenceEqual(_member))
+            if (_member is not null && !message.Member.Span.SequenceEqual(_member))
             {
                 return false;
             }
 
-            if (_path is not null && !reader.Path.Span.SequenceEqual(_path))
+            if (_path is not null && !message.Path.Span.SequenceEqual(_path))
             {
                 return false;
             }
 
-            if (_destination is not null && !reader.Destination.Span.SequenceEqual(_destination))
+            if (_destination is not null && !message.Destination.Span.SequenceEqual(_destination))
             {
                 return false;
             }
 
-            if (_pathNamespace is not null && !IsEqualOrChildOfPath(reader.Path, _pathNamespace))
+            if (_pathNamespace is not null && !IsEqualOrChildOfPath(message.Path, _pathNamespace))
             {
                 return false;
             }
@@ -721,14 +706,12 @@ class DBusConnection : IDisposable
                 _arg0 is not null ||
                 _arg0Path is not null)
             {
-                reader.Rewind();
-
-                if (reader.Signature.IsEmpty)
+                if (message.Signature.IsEmpty)
                 {
                     return false;
                 }
 
-                DBusType arg0Type = (DBusType)reader.Signature.Span[0];
+                DBusType arg0Type = (DBusType)message.Signature.Span[0];
 
                 if (arg0Type != DBusType.String ||
                     arg0Type != DBusType.ObjectPath)
@@ -736,7 +719,7 @@ class DBusConnection : IDisposable
                     return false;
                 }
 
-                ReadOnlySpan<byte> arg0 = reader.ReadString();
+                ReadOnlySpan<byte> arg0 = message.GetBodyReader().ReadString();
 
                 if (_arg0Path is not null && !IsEqualParentOrChildOfPath(arg0, _arg0Path))
                 {
@@ -788,4 +771,6 @@ class DBusConnection : IDisposable
             }
         }
     }
+
+    public MessageWriter GetMessageWriter() => new MessageWriter(MessagePool.Shared.Rent());
 }

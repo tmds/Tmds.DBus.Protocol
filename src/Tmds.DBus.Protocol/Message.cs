@@ -1,86 +1,146 @@
-using System.Collections.ObjectModel;
-
 namespace Tmds.DBus.Protocol;
 
-public class Message
+public readonly ref struct Message
 {
-    internal const int LengthOffset = 4;
-    internal const int SerialOffset = 8;
-    internal const int HeaderFieldsLengthOffset = 12;
-    internal const int UnixFdLengthOffset = 20;
+    private readonly bool _isBigEndian;
+    private readonly UnixFdCollection? _handles;
+    private readonly ReadOnlySequence<byte> _body;
 
-    private Sequence<byte> _sequence;
-    private ArraySegment<byte> _firstSpan;
-    private List<SafeHandle>? _handles;
-    private ReadOnlyCollection<SafeHandle>? _readonlyCollection;
+    public MessageType Type { get; }
+    public MessageFlags Flags { get; }
+    public uint Serial { get; }
 
-    internal Message(Sequence<byte> sequence)
+    // Header Fields
+    public Utf8Span Path { get; }
+    public Utf8Span Interface { get; }
+    public Utf8Span Member { get; }
+    public Utf8Span ErrorName { get; }
+    public uint? ReplySerial { get; }
+    public Utf8Span Destination { get; }
+    public Utf8Span Sender { get; }
+    public Utf8Span Signature { get; }
+    public int UnixFds { get; }
+
+    public Reader GetBodyReader() => new Reader(_isBigEndian, _body, _handles);
+
+    private Message(ReadOnlySequence<byte> sequence, bool isBigEndian, MessageType type, MessageFlags flags, uint serial, UnixFdCollection? handles)
     {
-        _sequence = sequence;
-    }
+        _isBigEndian = isBigEndian;
+        Type = type;
+        Flags = flags;
+        Serial = serial;
+        _handles = handles;
 
-    internal void ReturnToPool()
-    {
-        _sequence.Reset();
-        _firstSpan = default;
-        // TODO: dispose handles.
-        // TODO: return to pool...
-    }
+        Path = default;
+        Interface = default;
+        Member = default;
+        ErrorName = default;
+        ReplySerial = default;
+        Destination = default;
+        Sender = default;
+        Signature = default;
+        UnixFds = default;
 
-    internal IBufferWriter<byte> Writer => _sequence;
+        var reader = new Reader(isBigEndian, sequence, null);
+        reader.Advance(MessageBuffer.HeaderFieldsLengthOffset);
 
-    internal Span<byte> GetSpan(int sizeHint)
-    {
-        var memory = _sequence.GetMemory(sizeHint);
-        if (_firstSpan.Count == 0)
+        ArrayEnd headersEnd = reader.ReadArrayStart(DBusType.Struct);
+        while (reader.HasNext(headersEnd))
         {
-            bool arrayInitialized = MemoryMarshal.TryGetArray(memory, out _firstSpan);
-            Debug.Assert(arrayInitialized);
+            MessageHeader hdrType = (MessageHeader)reader.ReadByte();
+            ReadOnlySpan<byte> sig = reader.ReadSignature();
+            switch (hdrType)
+            {
+                case MessageHeader.Path:
+                    Path = reader.ReadObjectPath();
+                    break;
+                case MessageHeader.Interface:
+                    Interface = reader.ReadString();
+                    break;
+                case MessageHeader.Member:
+                    Member = reader.ReadString();
+                    break;
+                case MessageHeader.ErrorName:
+                    ErrorName = reader.ReadString();
+                    break;
+                case MessageHeader.ReplySerial:
+                    ReplySerial = reader.ReadUInt32();
+                    break;
+                case MessageHeader.Destination:
+                    Destination = reader.ReadString();
+                    break;
+                case MessageHeader.Sender:
+                    Sender = reader.ReadString();
+                    break;
+                case MessageHeader.Signature:
+                    Signature = reader.ReadSignature();
+                    break;
+                case MessageHeader.UnixFds:
+                    UnixFds = (int)reader.ReadUInt32();
+                    // TODO: throw if handles contains less.
+                    break;
+                default:
+                    throw new NotSupportedException();
+            }
         }
-        return memory.Span;
+        reader.AlignReader(DBusType.Struct);
+
+        _body = reader.UnreadSequence;
     }
 
-    internal void Advance(int count)
+    public static bool TryReadMessage(ref ReadOnlySequence<byte> sequence, out Message message, UnixFdCollection? handles = null)
     {
-        _sequence.Advance(count);
-    }
+        message = default;
 
-    public MessageWriter GetWriter() => new MessageWriter(this);
-
-    public void SetSerial(uint serial)
-    {
-        Span<byte> span = _firstSpan;
-        Unsafe.WriteUnaligned<uint>(ref MemoryMarshal.GetReference(span.Slice(SerialOffset)), serial);
-    }
-
-    private void CompleteMessage()
-    {
-        Span<byte> span = _firstSpan;
-
-        // Length
-        uint headerFieldsLength = Unsafe.ReadUnaligned<uint>(ref MemoryMarshal.GetReference(span.Slice(HeaderFieldsLengthOffset)));
-        uint pad = headerFieldsLength % 8;
-        if (pad != 0)
+        SequenceReader<byte> seqReader = new(sequence);
+        if (!seqReader.TryRead(out byte endianness) ||
+            !seqReader.TryRead(out byte msgType) ||
+            !seqReader.TryRead(out byte flags) ||
+            !seqReader.TryRead(out byte version))
         {
-            headerFieldsLength += (8 - pad);
+            return false;
         }
-        uint length = (uint)_sequence.Length             // Total length
-                      - headerFieldsLength               // Header fields
-                      - 4                                // Header fields length
-                      - (uint)HeaderFieldsLengthOffset;  // Preceeding header fields
-        Unsafe.WriteUnaligned<uint>(ref MemoryMarshal.GetReference(span.Slice(LengthOffset)), length);
 
-        // UnixFdLength
-        Unsafe.WriteUnaligned<uint>(ref MemoryMarshal.GetReference(span.Slice(UnixFdLengthOffset)), _handles is null ? 0 : (uint)_handles.Count);
+        if (version != 1)
+        {
+            throw new NotSupportedException();
+        }
+
+        bool isBigEndian = endianness == 'B';
+
+        if (!TryReadUInt32(ref seqReader, isBigEndian, out uint bodyLength) ||
+            !TryReadUInt32(ref seqReader, isBigEndian, out uint serial) ||
+            !TryReadUInt32(ref seqReader, isBigEndian, out uint headerFieldLength))
+        {
+            return false;
+        }
+
+        headerFieldLength = (uint)ProtocolConstants.Align((int)headerFieldLength, DBusType.Struct);
+
+        long totalLength = seqReader.Consumed + headerFieldLength + bodyLength;
+
+        if (sequence.Length < totalLength)
+        {
+            return false;
+        }
+
+        message = new Message(sequence.Slice(0, totalLength),
+                                    isBigEndian,
+                                    (MessageType)msgType,
+                                    (MessageFlags)flags,
+                                    serial,
+                                    handles);
+
+        sequence = sequence.Slice(totalLength);
+
+        return true;
+
+        static bool TryReadUInt32(ref SequenceReader<byte> seqReader, bool isBigEndian, out uint value)
+        {
+            int v;
+            bool rv = (isBigEndian && seqReader.TryReadBigEndian(out v) || seqReader.TryReadLittleEndian(out v));
+            value = (uint)v;
+            return rv;
+        }
     }
-
-    public ReadOnlySequence<byte> AsReadOnlySequence()
-    {
-        CompleteMessage();
-
-        return _sequence.AsReadOnlySequence;
-    }
-
-    public IReadOnlyList<SafeHandle>? Handles =>
-        _readonlyCollection ?? (_readonlyCollection = _handles?.AsReadOnly());
 }

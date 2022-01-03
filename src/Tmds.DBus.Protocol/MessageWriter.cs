@@ -2,10 +2,17 @@ namespace Tmds.DBus.Protocol;
 
 public ref struct MessageWriter
 {
-    private readonly Message _message;
+    private readonly MessageBuffer _message;
     private Span<byte> _span;
     private int _offset;
     private int _buffered;
+
+    public MessageBuffer CreateMessage()
+    {
+        Flush();
+
+        return _message;
+    }
 
     private IBufferWriter<byte> Writer
     {
@@ -16,7 +23,7 @@ public ref struct MessageWriter
         }
     }
 
-    internal MessageWriter(Message message)
+    internal MessageWriter(MessageBuffer message)
     {
         _message = message;
         _offset = 0;
@@ -203,9 +210,9 @@ public ref struct MessageWriter
         WriteByte((byte)flags);
         WriteByte((byte)1); // version
         WriteUInt32((uint)0); // length placeholder
-        Debug.Assert(_offset == Message.LengthOffset + 4);
+        Debug.Assert(_offset == MessageBuffer.LengthOffset + 4);
         WriteUInt32((uint)0); // serial placeholder
-        Debug.Assert(_offset == Message.SerialOffset + 4);
+        Debug.Assert(_offset == MessageBuffer.SerialOffset + 4);
 
         // headers
         ArrayStart start = WriteArrayStart(DBusType.Struct);
@@ -214,7 +221,7 @@ public ref struct MessageWriter
         WriteStructureStart();
         WriteByte((byte)MessageHeader.UnixFds);
         WriteVariantUInt32(0); // unix fd length placeholder
-        Debug.Assert(_offset == Message.UnixFdLengthOffset + 4);
+        Debug.Assert(_offset == MessageBuffer.UnixFdLengthOffset + 4);
         return start;
     }
 
@@ -483,7 +490,7 @@ public ref struct MessageWriter
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public void Flush()
+    private void Flush()
     {
         var buffered = _buffered;
         if (buffered > 0)

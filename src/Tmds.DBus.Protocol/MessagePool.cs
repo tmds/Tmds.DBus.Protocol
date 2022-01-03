@@ -1,13 +1,13 @@
 namespace Tmds.DBus.Protocol;
 
-public class MessagePool
+class MessagePool
 {
     public static readonly MessagePool Shared = new MessagePool(Environment.ProcessorCount * 2);
 
     private const int MinimumSpanLength = 512;
 
     private readonly int _maxSize;
-    private readonly Stack<Message> _pool = new Stack<Message>();
+    private readonly Stack<MessageBuffer> _pool = new Stack<MessageBuffer>();
 
     private readonly ArrayPool<byte> _arrayPool = ArrayPool<byte>.Create(80 * 1024, 100);
 
@@ -16,22 +16,22 @@ public class MessagePool
         _maxSize = maxSize;
     }
 
-    public Rental Rent()
+    public MessageBuffer Rent()
     {
         lock (_pool)
         {
             if (_pool.Count > 0)
             {
-                return new Rental(this, _pool.Pop());
+                return _pool.Pop();
             }
         }
 
         var sequence = new Sequence<byte>(_arrayPool) { MinimumSpanLength = MinimumSpanLength };
 
-        return new Rental(this, new Message(sequence));
+        return new MessageBuffer(this, sequence);
     }
 
-    private void Return(Message value)
+    internal void Return(MessageBuffer value)
     {
         lock (_pool)
         {
@@ -39,24 +39,6 @@ public class MessagePool
             {
                 _pool.Push(value);
             }
-        }
-    }
-
-    public struct Rental : IDisposable
-    {
-        private readonly MessagePool _owner;
-
-        internal Rental(MessagePool owner, Message value)
-        {
-            _owner = owner;
-            Message = value;
-        }
-
-        public Message Message { get; }
-
-        public void Dispose()
-        {
-            _owner.Return(Message);
         }
     }
 }

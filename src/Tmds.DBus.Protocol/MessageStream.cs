@@ -14,8 +14,8 @@ class MessageStream : IMessageStream
     private bool _supportsFdPassing;
 
     // Messages going out.
-    private readonly ChannelReader<Message> _messageReader;
-    private readonly ChannelWriter<Message> _messageWriter;
+    private readonly ChannelReader<MessageBuffer> _messageReader;
+    private readonly ChannelWriter<MessageBuffer> _messageWriter;
 
     // Bytes coming in.
     private readonly PipeWriter _pipeWriter;
@@ -26,7 +26,7 @@ class MessageStream : IMessageStream
     public MessageStream(Socket socket)
     {
         _socket = socket;
-        Channel<Message> channel = Channel.CreateUnbounded<Message>(); // TODO: review options.
+        Channel<MessageBuffer> channel = Channel.CreateUnbounded<MessageBuffer>(); // TODO: review options.
         _messageReader = channel.Reader;
         _messageWriter = channel.Writer;
         var pipe = new Pipe(); // TODO: review options.
@@ -131,16 +131,16 @@ class MessageStream : IMessageStream
 
         static void ReadMessages<TState>(ref ReadOnlySequence<byte> buffer, UnixFdCollection? fdCollection, IMessageStream.MessageReceivedHandler<TState> handler, TState state)
         {
-            while (MessageReader.TryReadMessage(ref buffer, out MessageReader reader, fdCollection))
+            while (Message.TryReadMessage(ref buffer, out Message message, fdCollection))
             {
-                handler(closeReason: null, ref reader, state);
+                handler(closeReason: null, ref message, state);
             }
         }
 
         static void OnException(Exception exception, IMessageStream.MessageReceivedHandler<T> handler, T state)
         {
-            MessageReader reader = default;
-            handler(exception, ref reader, state);
+            Message message = default;
+            handler(exception, ref message, state);
         }
     }
 
@@ -342,7 +342,7 @@ class MessageStream : IMessageStream
         }
     }
 
-    public async ValueTask<bool> TrySendMessageAsync(Message message)
+    public async ValueTask<bool> TrySendMessageAsync(MessageBuffer message)
     {
         while (await _messageWriter.WaitToWriteAsync().ConfigureAwait(false))
         {

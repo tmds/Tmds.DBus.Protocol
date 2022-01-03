@@ -2,10 +2,8 @@ namespace Tmds.DBus.Protocol;
 
 public class MessageFormatter
 {
-    public static void FormatMessage(MessageReader msg, StringBuilder sb)
+    public static void FormatMessage(in Message msg, StringBuilder sb)
     {
-        msg.Rewind();
-
         // Header.
         Append(sb, msg.Type);
         sb.Append(" serial=");
@@ -32,13 +30,14 @@ public class MessageFormatter
 
         // Body.
         int indent = 2;
-        ReadData(sb, ref msg, msg.Signature, indent);
+        Reader reader = msg.GetBodyReader();
+        ReadData(sb, ref reader, msg.Signature, indent);
 
         // Remove final newline.
         sb.Remove(sb.Length - Environment.NewLine.Length, Environment.NewLine.Length);
     }
 
-    private static void ReadData(StringBuilder sb, ref MessageReader msg, Utf8Span signature, int indent)
+    private static void ReadData(StringBuilder sb, ref Reader message, Utf8Span signature, int indent)
     {
         var sigReader = new SignatureReader(signature);
         while (sigReader.TryRead(out DBusType type, out ReadOnlySpan<byte> innerSignature))
@@ -67,7 +66,7 @@ public class MessageFormatter
                 //     sb.AppendLine($"int32  {msg.ReadInt32()}");
                 //     break;
                 case DBusType.UInt32:
-                    sb.AppendLine($"uint32 {msg.ReadUInt32()}");
+                    sb.AppendLine($"uint32 {message.ReadUInt32()}");
                     break;
                 // case DBusType.Int64:
                 //     sb.Append($"int64  {msg.ReadInt64()}");
@@ -79,48 +78,48 @@ public class MessageFormatter
                 //     sb.Append($"double {msg.ReadDouble()}");
                 //     break;
                 case DBusType.UnixFd:
-                    sb.AppendLine($"fd     {msg.ReadHandle(own: false)}");
+                    sb.AppendLine($"fd     {message.ReadHandle(own: false)}");
                     break;
                 case DBusType.String:
                     sb.Append("string ");
-                    sb.AppendUTF8(msg.ReadString()); // TODO: handle long strings without allocating.
+                    sb.AppendUTF8(message.ReadString()); // TODO: handle long strings without allocating.
                     sb.AppendLine();
                     break;
                 case DBusType.ObjectPath:
                     sb.Append("path   ");
-                    sb.AppendUTF8(msg.ReadObjectPath()); // TODO: handle long strings without allocating.
+                    sb.AppendUTF8(message.ReadObjectPath()); // TODO: handle long strings without allocating.
                     sb.AppendLine();
                     break;
                 case DBusType.Signature:
                     sb.Append("sig    ");
-                    sb.AppendUTF8(msg.ReadSignature());
+                    sb.AppendUTF8(message.ReadSignature());
                     sb.AppendLine();
                     break;
                 case DBusType.Array:
                     sb.AppendLine("array  [");
-                    ArrayEnd itEnd = msg.ReadArrayStart((DBusType)innerSignature[0]);
-                    while (msg.HasNext(itEnd))
+                    ArrayEnd itEnd = message.ReadArrayStart((DBusType)innerSignature[0]);
+                    while (message.HasNext(itEnd))
                     {
-                        ReadData(sb, ref msg, innerSignature, indent + 2);
+                        ReadData(sb, ref message, innerSignature, indent + 2);
                     }
                     sb.Append(' ', indent);
                     sb.AppendLine("]");
                     break;
                 case DBusType.Struct:
                     sb.AppendLine("struct (");
-                    ReadData(sb, ref msg, innerSignature, indent + 2);
+                    ReadData(sb, ref message, innerSignature, indent + 2);
                     sb.Append(' ', indent);
                     sb.AppendLine(")");
                     break;
                 case DBusType.Variant:
                     sb.AppendLine("var   ("); // TODO: merge with next line
-                    ReadData(sb, ref msg, msg.ReadSignature(), indent + 2);
+                    ReadData(sb, ref message, message.ReadSignature(), indent + 2);
                     sb.Append(' ', indent);
                     sb.AppendLine(")");
                     break;
                 case DBusType.DictEntry:
                     sb.AppendLine("dicte (");
-                    ReadData(sb, ref msg, innerSignature, indent + 2);
+                    ReadData(sb, ref message, innerSignature, indent + 2);
                     sb.Append(' ', indent);
                     sb.AppendLine(")");
                     break;

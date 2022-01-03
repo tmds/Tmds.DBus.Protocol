@@ -1,7 +1,7 @@
 namespace Tmds.DBus.Protocol;
 
-public delegate void MessageReceivedHandler(Exception? exception, ref MessageReader reader, object? state);
-public delegate T MethodReturnHandler<T>(ref MessageReader reader);
+public delegate void MessageReceivedHandler(Exception? exception, ref Message message, object? state);
+public delegate T MethodReturnHandler<T>(ref Message message);
 
 public class Connection : IDisposable
 {
@@ -178,7 +178,7 @@ public class Connection : IDisposable
         }
     }
 
-    public async ValueTask CallMethodAsync(Message message, MessageReceivedHandler handler, object? state = null)
+    public async ValueTask CallMethodAsync(MessageBuffer message, MessageReceivedHandler handler, object? state = null)
     {
         DBusConnection connection;
         try
@@ -216,4 +216,6 @@ public class Connection : IDisposable
         }
         return newConnection;
     }
+
+    public MessageWriter GetMessageWriter() => new MessageWriter(MessagePool.Shared.Rent());
 }

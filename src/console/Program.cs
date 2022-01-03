@@ -15,10 +15,10 @@ class Program
         }, OnNameOwnerChanged);
 
         await connection.CallMethodAsync(
-            message: CreateHelloMessage(),
-            (Exception? exception, ref MessageReader reader, object? state) =>
+            message: CreateHelloMessage(connection),
+            (Exception? exception, ref Message message, object? state) =>
             {
-                PrintMessage(reader);
+                PrintMessage(message);
             });
 
         Console.WriteLine("Press any key to stop the application.");
@@ -27,13 +27,13 @@ class Program
         Console.ReadLine();
     }
 
-    private static void OnNameOwnerChanged(Exception? exception, ref MessageReader reader, object? state)
+    private static void OnNameOwnerChanged(Exception? exception, ref Message message, object? state)
     {
         Console.WriteLine("NameOwnerChanged:");
-        PrintMessage(reader);
+        PrintMessage(message);
     }
 
-    private static void ReceiveMessages(Exception? exception, ref MessageReader reader, object? state)
+    private static void ReceiveMessages(Exception? exception, ref Message message, object? state)
     {
         if (exception is not null)
         {
@@ -44,31 +44,27 @@ class Program
         }
         else
         {
-            PrintMessage(reader);
+            PrintMessage(message);
         }
     }
 
-    private static void PrintMessage(MessageReader reader)
+    private static void PrintMessage(in Message message)
     {
         StringBuilder sb = new();
-        MessageFormatter.FormatMessage(reader, sb);
+        MessageFormatter.FormatMessage(message, sb);
         Console.WriteLine(sb.ToString());
     }
 
-    private static Message CreateHelloMessage()
+    private static MessageBuffer CreateHelloMessage(Connection connection)
     {
-        var rented = MessagePool.Shared.Rent();
-        var message = rented.Message;
+        MessageWriter writer = connection.GetMessageWriter();
 
-        MessageWriter writer = message.GetWriter();
         writer.WriteMethodCallHeader(
             destination: "org.freedesktop.DBus",
             path: "/org/freedesktop/DBus",
             @interface: "org.freedesktop.DBus",
             member: "Hello");
 
-        writer.Flush();
-
-        return message;
+        return writer.CreateMessage();
     }
 }
