@@ -1,7 +1,7 @@
 namespace Tmds.DBus.Protocol;
 
 public delegate void MessageReceivedHandler(Exception? exception, ref Message message, object? state);
-public delegate T MethodReturnHandler<T>(ref Message message);
+public delegate T MethodReturnHandler<T>(ref Message message, object? state);
 
 public class Connection : IDisposable
 {

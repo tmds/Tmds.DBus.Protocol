@@ -15,9 +15,34 @@ class DBusConnection : IDisposable
         Disconnected
     }
 
+    delegate void PendingCallDelegate(Exception? exception, ref Message message, object? state1, object? state2, object? state3);
+
+    readonly struct PendingCallHandler
+    {
+        public PendingCallHandler(PendingCallDelegate handler, object? state1 = null, object? state2 = null, object? state3 = null)
+        {
+            _delegate = handler;
+            _state1 = state1;
+            _state2 = state2;
+            _state3 = state3;
+        }
+
+        public void Invoke(Exception? exception, ref Message message)
+        {
+            _delegate(exception, ref message, _state1, _state2, _state3);
+        }
+
+        public bool HasValue => _delegate is not null;
+
+        private readonly PendingCallDelegate _delegate;
+        private readonly object? _state1;
+        private readonly object? _state2;
+        private readonly object? _state3;
+    }
+
     private readonly object _gate = new object();
     private readonly Connection _parentConnection;
-    private readonly Dictionary<uint, (MessageReceivedHandler, object?)> _pendingCalls;
+    private readonly Dictionary<uint, PendingCallHandler> _pendingCalls;
     private readonly CancellationTokenSource _connectCts;
     private readonly Dictionary<string, MatchMaker> _matchMakers;
     private readonly List<Observer> _matchedObservers;
@@ -95,7 +120,7 @@ class DBusConnection : IDisposable
                 await stream.DoClientAuthAsync(guid, userId, supportsFdPassing).ConfigureAwait(false);
 
                 stream.ReceiveMessages(
-                    (Exception? exception, ref Message message, DBusConnection connection) =>
+                    static (Exception? exception, ref Message message, DBusConnection connection) =>
                         connection.HandleMessages(exception, ref message), this);
 
                 lock (_gate)
@@ -132,7 +157,7 @@ class DBusConnection : IDisposable
 
         await CallMethodAsync(
             message: CreateHelloMessage(),
-            (Exception? exception, ref Message message, object? state) =>
+            static (Exception? exception, ref Message message, object? state) =>
             {
                 var tcsState = (TaskCompletionSource<string?>)state!;
 
@@ -174,7 +199,7 @@ class DBusConnection : IDisposable
         }
         else
         {
-            (MessageReceivedHandler handler, object? state) pendingCall = default;
+            PendingCallHandler pendingCall = default;
 
             lock (_gate)
             {
@@ -203,9 +228,9 @@ class DBusConnection : IDisposable
             }
             _matchedObservers.Clear();
 
-            if (pendingCall.handler is not null)
+            if (pendingCall.HasValue)
             {
-                pendingCall.handler(null, ref message, pendingCall.state!);
+                pendingCall.Invoke(null, ref message);
             }
         }
     }
@@ -228,9 +253,9 @@ class DBusConnection : IDisposable
         if (_pendingCalls is not null)
         {
             Message message = default;
-            foreach (var handler in _pendingCalls.Values)
+            foreach (var pendingCall in _pendingCalls.Values)
             {
-                handler.Item1.Invoke(new DisconnectedException(disconnectReason), ref message, handler.Item2);
+                pendingCall.Invoke(new DisconnectedException(disconnectReason), ref message);
             }
             _pendingCalls.Clear();
         }
@@ -248,7 +273,18 @@ class DBusConnection : IDisposable
         }
     }
 
-    public async ValueTask CallMethodAsync(MessageBuffer message, MessageReceivedHandler returnHandler, object? state)
+    public ValueTask CallMethodAsync(MessageBuffer message, MessageReceivedHandler returnHandler, object? state)
+    {
+        PendingCallDelegate fn = static (Exception? exception, ref Message message, object? state1, object? state2, object? state3) =>
+        {
+            ((MessageReceivedHandler)state1!)(exception, ref message, state2);
+        };
+        PendingCallHandler handler = new(fn, returnHandler, state);
+
+        return CallMethodAsync(message, handler);
+    }
+
+    private async ValueTask CallMethodAsync(MessageBuffer message, PendingCallHandler handler)
     {
         bool messageSent = false;
         try
@@ -262,7 +298,7 @@ class DBusConnection : IDisposable
                 }
                 nextSerial = ++_nextSerial;
                 // TODO: don't add pending call when NoReplyExpected.
-                _pendingCalls.Add(nextSerial, (returnHandler, state));
+                _pendingCalls.Add(nextSerial, handler);
             }
 
             message.SetSerial(nextSerial);
@@ -278,56 +314,58 @@ class DBusConnection : IDisposable
         }
     }
 
-    public async Task<T> CallMethodAsync<T>(MessageBuffer message, MethodReturnHandler<T> returnHandler, bool runContinuationsAsync = true)
+    public async Task<T> CallMethodAsync<T>(MessageBuffer message, MethodReturnHandler<T> returnHandler, object? state = null)
     {
-        TaskCompletionSource<T> tcs = new(runContinuationsAsync ? TaskCreationOptions.RunContinuationsAsynchronously : TaskCreationOptions.None);
+        PendingCallDelegate fn = static (Exception? exception, ref Message message, object? state1, object? state2, object? state3) =>
+        {
+            var returnHandlerState = (MethodReturnHandler<T>)state1!;
+            var tcsState = (TaskCompletionSource<T>)state2!;
 
-        await CallMethodAsync(
-            message,
-            (Exception? exception, ref Message message, object? state) =>
+            if (exception is not null)
             {
-                var tcsState = (TaskCompletionSource<T>)state!;
+                tcsState.SetException(exception);
+            }
+            else if (message.Type == MessageType.MethodReturn)
+            {
+                tcsState.SetResult(returnHandlerState(ref message, state3));
+            }
+            else if (message.Type == MessageType.Error)
+            {
+                string errorName = message.ErrorName.ToString();
+                string errMessage = errorName;
+                if (!message.Signature.IsEmpty && (DBusType)message.Signature.Span[0] == DBusType.String)
+                {
+                    errMessage = message.GetBodyReader().ReadStringAsString();
+                }
+                tcsState.SetException(new DBusException(errorName, errMessage));
+            }
+            else
+            {
+                tcsState.SetException(new ProtocolException($"Unexpected reply type: {message.Type}."));
+            }
+        };
 
-                if (exception is not null)
-                {
-                    tcsState.SetException(exception);
-                }
-                else if (message.Type == MessageType.MethodReturn)
-                {
-                    tcsState.SetResult(returnHandler(ref message));
-                }
-                else if (message.Type == MessageType.Error)
-                {
-                    string errorName = message.ErrorName.ToString();
-                    string errMessage = errorName;
-                    if (!message.Signature.IsEmpty && (DBusType)message.Signature.Span[0] == DBusType.String)
-                    {
-                        errMessage = message.GetBodyReader().ReadStringAsString();
-                    }
-                    tcsState.SetException(new DBusException(errorName, errMessage));
-                }
-                else
-                {
-                    tcsState.SetException(new ProtocolException($"Unexpected reply type: {message.Type}."));
-                }
-            }, tcs);
+        TaskCompletionSource<T> tcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        PendingCallHandler handler = new(fn, returnHandler, tcs, state);
+
+        await  CallMethodAsync(message, handler);
 
         return await tcs.Task;
     }
 
-    public async Task CallMethodAsync(MessageBuffer message, bool runContinuationsAsync = true)
+    public async Task CallMethodAsync(MessageBuffer message)
     {
-        TaskCompletionSource tcs = new(runContinuationsAsync ? TaskCreationOptions.RunContinuationsAsynchronously : TaskCreationOptions.None);
+        TaskCompletionSource tcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
         await CallMethodAsync(message,
-            (Exception? exception, ref Message message, object? state) => CompleteCallTaskCompletionSource(exception, ref message, state), tcs);
+            static (Exception? exception, ref Message message, object? state) => CompleteCallTaskCompletionSource(exception, ref message, state), tcs);
 
         await tcs.Task;
     }
 
-    private static void CompleteCallTaskCompletionSource(Exception? exception, ref Message message, object? state)
+    private static void CompleteCallTaskCompletionSource(Exception? exception, ref Message message, object? tcs)
     {
-        var tcsState = (TaskCompletionSource)state!;
+        var tcsState = (TaskCompletionSource)tcs!;
 
         if (exception is not null)
         {
@@ -392,10 +430,17 @@ class DBusConnection : IDisposable
                 matchMaker.AddMatchTcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
                 nextSerial = ++_nextSerial;
 
-                MessageReceivedHandler receiveHandler = static (Exception? exception, ref Message message, object? state)
-                                                            => HandleReply(exception, ref message, (MatchMaker)state!);
+                PendingCallDelegate fn = static (Exception? exception, ref Message message, object? state1, object? state2, object? state3) =>
+                {
+                    var mm = (MatchMaker)state1!;
+                    if (message.Type == MessageType.MethodReturn)
+                    {
+                        mm.HasSubscribed = true;
+                    }
+                    CompleteCallTaskCompletionSource(exception, ref message, mm.AddMatchTcs!);
+                };
 
-                _pendingCalls.Add(nextSerial, (receiveHandler, matchMaker));
+                _pendingCalls.Add(nextSerial, new(fn, matchMaker));
             }
         }
 
@@ -424,15 +469,6 @@ class DBusConnection : IDisposable
         }
 
         return observer;
-
-        static void HandleReply(Exception? exception, ref Message message, MatchMaker mm)
-        {
-            if (message.Type == MessageType.MethodReturn)
-            {
-                mm.HasSubscribed = true;
-            }
-            CompleteCallTaskCompletionSource(exception, ref message, mm.AddMatchTcs!);
-        }
 
         MessageBuffer CreateAddMatchMessage(string ruleString)
         {
