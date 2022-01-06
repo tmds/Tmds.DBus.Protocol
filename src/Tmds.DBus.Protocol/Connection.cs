@@ -1,7 +1,6 @@
 namespace Tmds.DBus.Protocol;
 
-public delegate void MessageReceivedHandler(Exception? exception, ref Message message, object? state);
-public delegate T MethodReturnHandler<T>(ref Message message, object? state);
+public delegate T MessageValueReader<T>(ref Message message, object? state);
 
 public class Connection : IDisposable
 {
@@ -178,7 +177,7 @@ public class Connection : IDisposable
         }
     }
 
-    public async ValueTask CallMethodAsync(MessageBuffer message, MessageReceivedHandler handler, object? state = null)
+    public async Task CallMethodAsync(MessageBuffer message)
     {
         DBusConnection connection;
         try
@@ -190,13 +189,28 @@ public class Connection : IDisposable
             message.ReturnToPool();
             throw;
         }
-        await connection.CallMethodAsync(message, handler, state);
+        await connection.CallMethodAsync(message);
     }
 
-    public async ValueTask<IDisposable> AddMatchAsync(MatchRule rule, MessageReceivedHandler handler, object? state = null, bool subscribe = true)
+    public async Task<T> CallMethodAsync<T>(MessageBuffer message, MessageValueReader<T> reader, object? readerState = null)
+    {
+        DBusConnection connection;
+        try
+        {
+            connection = await ConnectCoreAsync();
+        }
+        catch
+        {
+            message.ReturnToPool();
+            throw;
+        }
+        return await connection.CallMethodAsync(message, reader, readerState);
+    }
+
+    public async ValueTask<IDisposable> AddMatchAsync<T>(MatchRule rule, MessageValueReader<T> reader, Action<Exception?, T, object?> handler, object? readerState = null, object? handlerState = null, bool subscribe = true)
     {
         DBusConnection connection = await ConnectCoreAsync();
-        return await connection.AddMatchAsync(rule, handler, state, subscribe);
+        return await connection.AddMatchAsync(rule, reader, handler, readerState, handlerState, subscribe);
     }
 
     private static Connection CreateConnection(ref Connection? field, string? address)
@@ -208,7 +222,7 @@ public class Connection : IDisposable
             return connection;
         }
         var newConnection = new Connection(new ClientConnectionOptions(address) { AutoConnect = true });
-        connection = Interlocked.CompareExchange(ref field, newConnection, null);;
+        connection = Interlocked.CompareExchange(ref field, newConnection, null);
         if (connection != null)
         {
             newConnection.Dispose();

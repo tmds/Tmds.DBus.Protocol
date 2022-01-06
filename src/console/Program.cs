@@ -6,20 +6,11 @@ class Program
 {
     static async Task Main()
     {
+        NetworkManagerExample();
+
         var connection = Connection.Session;
 
-        await connection.AddMatchAsync(new MatchRule
-        {
-            Type = MessageType.Signal,
-            Member = "NameOwnerChanged"
-        }, OnNameOwnerChanged);
-
-        await connection.CallMethodAsync(
-            message: CreateHelloMessage(connection),
-            (Exception? exception, ref Message message, object? state) =>
-            {
-                PrintMessage(message);
-            });
+        // await connection.CallMethodAsync(CreateHelloMessage(connection));
 
         Console.WriteLine("Press any key to stop the application.");
         Console.WriteLine();
@@ -27,24 +18,19 @@ class Program
         Console.ReadLine();
     }
 
-    private static void OnNameOwnerChanged(Exception? exception, ref Message message, object? state)
+    private static async void NetworkManagerExample()
     {
-        Console.WriteLine("NameOwnerChanged:");
-        PrintMessage(message);
-    }
+        var nm = new NetworkManager(Connection.System);
 
-    private static void ReceiveMessages(Exception? exception, ref Message message, object? state)
-    {
-        if (exception is not null)
+        foreach (var device in await nm.GetDevicesAsync())
         {
-            if (exception is not ObjectDisposedException)
-            {
-                Console.WriteLine($"Exception: {exception}");
-            }
-        }
-        else
-        {
-            PrintMessage(message);
+            Console.WriteLine(device);
+
+            await device.WatchStateChangedAsync(
+                static (Exception? ex, (DeviceState, DeviceState) change, object? state) =>
+                {
+                    Console.WriteLine($"{state} {change.Item1} -> {change.Item2}");
+                }, device);
         }
     }
 

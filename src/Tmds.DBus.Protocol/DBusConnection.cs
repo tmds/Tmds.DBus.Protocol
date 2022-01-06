@@ -5,6 +5,7 @@ namespace Tmds.DBus.Protocol;
 
 class DBusConnection : IDisposable
 {
+    private delegate void MessageReceivedHandler(Exception? exception, ref Message message, object? state);
     private static readonly Exception s_disposedSentinel = new ObjectDisposedException(typeof(Connection).FullName);
 
     enum ConnectionState
@@ -15,11 +16,11 @@ class DBusConnection : IDisposable
         Disconnected
     }
 
-    delegate void PendingCallDelegate(Exception? exception, ref Message message, object? state1, object? state2, object? state3);
+    delegate void MessageHandlerDelegate(Exception? exception, ref Message message, object? state1, object? state2, object? state3);
 
-    readonly struct PendingCallHandler
+    readonly struct MessageHandler
     {
-        public PendingCallHandler(PendingCallDelegate handler, object? state1 = null, object? state2 = null, object? state3 = null)
+        public MessageHandler(MessageHandlerDelegate handler, object? state1 = null, object? state2 = null, object? state3 = null)
         {
             _delegate = handler;
             _state1 = state1;
@@ -34,15 +35,42 @@ class DBusConnection : IDisposable
 
         public bool HasValue => _delegate is not null;
 
-        private readonly PendingCallDelegate _delegate;
+        private readonly MessageHandlerDelegate _delegate;
         private readonly object? _state1;
         private readonly object? _state2;
         private readonly object? _state3;
     }
 
+    delegate void MessageHandlerDelegate4(Exception? exception, ref Message message, object? state1, object? state2, object? state3, object? state4);
+
+    readonly struct MessageHandler4
+    {
+        public MessageHandler4(MessageHandlerDelegate4 handler, object? state1 = null, object? state2 = null, object? state3 = null, object? state4 = null)
+        {
+            _delegate = handler;
+            _state1 = state1;
+            _state2 = state2;
+            _state3 = state3;
+            _state4 = state4;
+        }
+
+        public void Invoke(Exception? exception, ref Message message)
+        {
+            _delegate(exception, ref message, _state1, _state2, _state3, _state4);
+        }
+
+        public bool HasValue => _delegate is not null;
+
+        private readonly MessageHandlerDelegate4 _delegate;
+        private readonly object? _state1;
+        private readonly object? _state2;
+        private readonly object? _state3;
+        private readonly object? _state4;
+    }
+
     private readonly object _gate = new object();
     private readonly Connection _parentConnection;
-    private readonly Dictionary<uint, PendingCallHandler> _pendingCalls;
+    private readonly Dictionary<uint, MessageHandler> _pendingCalls;
     private readonly CancellationTokenSource _connectCts;
     private readonly Dictionary<string, MatchMaker> _matchMakers;
     private readonly List<Observer> _matchedObservers;
@@ -199,7 +227,7 @@ class DBusConnection : IDisposable
         }
         else
         {
-            PendingCallHandler pendingCall = default;
+            MessageHandler pendingCall = default;
 
             lock (_gate)
             {
@@ -273,18 +301,18 @@ class DBusConnection : IDisposable
         }
     }
 
-    public ValueTask CallMethodAsync(MessageBuffer message, MessageReceivedHandler returnHandler, object? state)
+    private ValueTask CallMethodAsync(MessageBuffer message, MessageReceivedHandler returnHandler, object? state)
     {
-        PendingCallDelegate fn = static (Exception? exception, ref Message message, object? state1, object? state2, object? state3) =>
+        MessageHandlerDelegate fn = static (Exception? exception, ref Message message, object? state1, object? state2, object? state3) =>
         {
             ((MessageReceivedHandler)state1!)(exception, ref message, state2);
         };
-        PendingCallHandler handler = new(fn, returnHandler, state);
+        MessageHandler handler = new(fn, returnHandler, state);
 
         return CallMethodAsync(message, handler);
     }
 
-    private async ValueTask CallMethodAsync(MessageBuffer message, PendingCallHandler handler)
+    private async ValueTask CallMethodAsync(MessageBuffer message, MessageHandler handler)
     {
         bool messageSent = false;
         try
@@ -314,11 +342,11 @@ class DBusConnection : IDisposable
         }
     }
 
-    public async Task<T> CallMethodAsync<T>(MessageBuffer message, MethodReturnHandler<T> returnHandler, object? state = null)
+    public async Task<T> CallMethodAsync<T>(MessageBuffer message, MessageValueReader<T> valueReader, object? state = null)
     {
-        PendingCallDelegate fn = static (Exception? exception, ref Message message, object? state1, object? state2, object? state3) =>
+        MessageHandlerDelegate fn = static (Exception? exception, ref Message message, object? state1, object? state2, object? state3) =>
         {
-            var returnHandlerState = (MethodReturnHandler<T>)state1!;
+            var valueReaderState = (MessageValueReader<T>)state1!;
             var tcsState = (TaskCompletionSource<T>)state2!;
 
             if (exception is not null)
@@ -327,7 +355,7 @@ class DBusConnection : IDisposable
             }
             else if (message.Type == MessageType.MethodReturn)
             {
-                tcsState.SetResult(returnHandlerState(ref message, state3));
+                tcsState.SetResult(valueReaderState(ref message, state3));
             }
             else if (message.Type == MessageType.Error)
             {
@@ -346,7 +374,7 @@ class DBusConnection : IDisposable
         };
 
         TaskCompletionSource<T> tcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
-        PendingCallHandler handler = new(fn, returnHandler, tcs, state);
+        MessageHandler handler = new(fn, valueReader, tcs, state);
 
         await  CallMethodAsync(message, handler);
 
@@ -391,7 +419,27 @@ class DBusConnection : IDisposable
         }
     }
 
-    public async ValueTask<IDisposable> AddMatchAsync(MatchRule rule, MessageReceivedHandler handler, object? state, bool subscribe)
+    public ValueTask<IDisposable> AddMatchAsync<T>(MatchRule rule, MessageValueReader<T> valueReader, Action<Exception?, T, object?> valueHandler, object? readerState, object? handlerState, bool subscribe)
+    {
+        MessageHandlerDelegate4 fn = static (Exception? exception, ref Message message, object? state1, object? state2, object? state3, object? state4) =>
+        {
+            var valueHandlerState = (Action<Exception?, T, object?>)state2!;
+            if (exception is not null)
+            {
+                valueHandlerState(exception, default(T), state4);
+            }
+            else
+            {
+                var valueReaderState = (MessageValueReader<T>)state1!;
+                T value = valueReaderState(ref message, state3);
+                valueHandlerState(null, value, state4);
+            }
+        };
+
+        return AddMatchAsync(rule, new(fn, valueReader, valueHandler, readerState, handlerState), subscribe);
+    }
+
+    private async ValueTask<IDisposable> AddMatchAsync(MatchRule rule, MessageHandler4 handler, bool subscribe)
     {
         MatchRuleData data = rule.Data;
         MatchMaker? matchMaker;
@@ -420,7 +468,7 @@ class DBusConnection : IDisposable
                 _matchMakers.Add(ruleString, matchMaker);
             }
 
-            observer = new Observer(matchMaker, handler, state, subscribe);
+            observer = new Observer(matchMaker, handler, subscribe);
             matchMaker.Observers.Add(observer);
 
             sendMessage = subscribe && matchMaker.AddMatchTcs is null;
@@ -430,7 +478,7 @@ class DBusConnection : IDisposable
                 matchMaker.AddMatchTcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
                 nextSerial = ++_nextSerial;
 
-                PendingCallDelegate fn = static (Exception? exception, ref Message message, object? state1, object? state2, object? state3) =>
+                MessageHandlerDelegate fn = static (Exception? exception, ref Message message, object? state1, object? state2, object? state3) =>
                 {
                     var mm = (MatchMaker)state1!;
                     if (message.Type == MessageType.MethodReturn)
@@ -491,17 +539,15 @@ class DBusConnection : IDisposable
     {
         private readonly object _gate = new object();
         private readonly MatchMaker _matchMaker;
-        private readonly MessageReceivedHandler _messageHandler;
-        private readonly object? _state;
+        private readonly MessageHandler4 _messageHandler;
         private bool _disposed;
 
         public bool Subscribes { get; }
 
-        public Observer(MatchMaker matchMaker, MessageReceivedHandler messageHandler, object? state, bool subscribes)
+        public Observer(MatchMaker matchMaker, in MessageHandler4 messageHandler, bool subscribes)
         {
             _matchMaker = matchMaker;
             _messageHandler = messageHandler;
-            _state = state;
             Subscribes = subscribes;
         }
 
@@ -517,7 +563,7 @@ class DBusConnection : IDisposable
 
                 Message message = default;
                 // TODO: signal Dispose without allocating an Exception?
-                _messageHandler(new ObjectDisposedException(GetType().FullName), ref message, _state);
+                _messageHandler.Invoke(new ObjectDisposedException(GetType().FullName), ref message);
             }
 
             _matchMaker.Connection.RemoveObserver(_matchMaker, this);
@@ -537,7 +583,7 @@ class DBusConnection : IDisposable
                     return;
                 }
 
-                _messageHandler(null, ref message, _state);
+                _messageHandler.Invoke(null, ref message);
             }
         }
 
@@ -552,7 +598,7 @@ class DBusConnection : IDisposable
                 _disposed = true;
 
                 Message message = default;
-                _messageHandler(disconnectedException, ref message, _state);
+                _messageHandler.Invoke(disconnectedException, ref message);
             }
         }
     }
