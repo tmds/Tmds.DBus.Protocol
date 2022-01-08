@@ -133,14 +133,14 @@ class MessageStream : IMessageStream
         {
             while (Message.TryReadMessage(ref buffer, out Message message, fdCollection))
             {
-                handler(closeReason: null, ref message, state);
+                handler(closeReason: null, in message, state);
             }
         }
 
         static void OnException(Exception exception, IMessageStream.MessageReceivedHandler<T> handler, T state)
         {
             Message message = default;
-            handler(exception, ref message, state);
+            handler(exception, in message, state);
         }
     }
 

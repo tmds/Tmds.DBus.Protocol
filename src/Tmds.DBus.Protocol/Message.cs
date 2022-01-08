@@ -2,6 +2,8 @@ namespace Tmds.DBus.Protocol;
 
 public readonly ref struct Message
 {
+    private const int HeaderFieldsLengthOffset = 12;
+
     private readonly bool _isBigEndian;
     private readonly UnixFdCollection? _handles;
     private readonly ReadOnlySequence<byte> _body;
@@ -42,7 +44,7 @@ public readonly ref struct Message
         UnixFds = default;
 
         var reader = new Reader(isBigEndian, sequence, null);
-        reader.Advance(MessageBuffer.HeaderFieldsLengthOffset);
+        reader.Advance(HeaderFieldsLengthOffset);
 
         ArrayEnd headersEnd = reader.ReadArrayStart(DBusType.Struct);
         while (reader.HasNext(headersEnd))

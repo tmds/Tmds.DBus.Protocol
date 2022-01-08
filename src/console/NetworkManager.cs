@@ -32,7 +32,7 @@ sealed class NetworkManager : DBusObject
     {
         return Connection.CallMethodAsync<Device[]>(
             message: CreateMessage(),
-            reader: static (ref Message message, object? state) =>
+            reader: static (in Message message, object? state) =>
             {
                 DBusObject nm = (DBusObject)state!;
 
@@ -86,7 +86,7 @@ sealed class Device : DBusObject
 
         return await Connection.AddMatchAsync(
             rule,
-            reader: static (ref Message message, object? state) =>
+            reader: static (in Message message, object? state) =>
             {
                 var reader = message.GetBodyReader();
 
