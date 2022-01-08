@@ -29,6 +29,17 @@ public ref struct Reader
         return (uint)rv;
     }
 
+    public int ReadInt32()
+    {
+        AlignReader(DBusType.UInt32);
+        bool dataRead = _isBigEndian ? _reader.TryReadBigEndian(out int rv) : _reader.TryReadLittleEndian(out rv);
+        if (!dataRead)
+        {
+            throw new IndexOutOfRangeException();
+        }
+        return rv;
+    }
+
     public byte ReadByte()
     {
         if (!_reader.TryRead(out byte b))

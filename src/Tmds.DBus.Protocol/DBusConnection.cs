@@ -1,3 +1,4 @@
+using System;
 using System.Net;
 using System.Net.Sockets;
 
@@ -5,7 +6,7 @@ namespace Tmds.DBus.Protocol;
 
 class DBusConnection : IDisposable
 {
-    private delegate void MessageReceivedHandler(Exception? exception, ref Message message, object? state);
+    private delegate void MessageReceivedHandler(Exception? exception, in Message message, object? state);
     private static readonly Exception s_disposedSentinel = new ObjectDisposedException(typeof(Connection).FullName);
 
     enum ConnectionState
@@ -16,7 +17,7 @@ class DBusConnection : IDisposable
         Disconnected
     }
 
-    delegate void MessageHandlerDelegate(Exception? exception, ref Message message, object? state1, object? state2, object? state3);
+    delegate void MessageHandlerDelegate(Exception? exception, in Message message, object? state1, object? state2, object? state3);
 
     readonly struct MessageHandler
     {
@@ -28,9 +29,9 @@ class DBusConnection : IDisposable
             _state3 = state3;
         }
 
-        public void Invoke(Exception? exception, ref Message message)
+        public void Invoke(Exception? exception, in Message message)
         {
-            _delegate(exception, ref message, _state1, _state2, _state3);
+            _delegate(exception, in message, _state1, _state2, _state3);
         }
 
         public bool HasValue => _delegate is not null;
@@ -41,7 +42,7 @@ class DBusConnection : IDisposable
         private readonly object? _state3;
     }
 
-    delegate void MessageHandlerDelegate4(Exception? exception, ref Message message, object? state1, object? state2, object? state3, object? state4);
+    delegate void MessageHandlerDelegate4(Exception? exception, in Message message, object? state1, object? state2, object? state3, object? state4);
 
     readonly struct MessageHandler4
     {
@@ -54,9 +55,9 @@ class DBusConnection : IDisposable
             _state4 = state4;
         }
 
-        public void Invoke(Exception? exception, ref Message message)
+        public void Invoke(Exception? exception, in Message message)
         {
-            _delegate(exception, ref message, _state1, _state2, _state3, _state4);
+            _delegate(exception, in message, _state1, _state2, _state3, _state4);
         }
 
         public bool HasValue => _delegate is not null;
@@ -74,11 +75,14 @@ class DBusConnection : IDisposable
     private readonly CancellationTokenSource _connectCts;
     private readonly Dictionary<string, MatchMaker> _matchMakers;
     private readonly List<Observer> _matchedObservers;
+    private readonly Dictionary<string, IMethodHandler> _pathHandlers;
+
     private IMessageStream? _messageStream;
     private ConnectionState _state;
     private Exception? _disconnectReason;
-    private uint _nextSerial;
     private string? _localName;
+
+    public string? UniqueName => _localName;
 
     public Exception DisconnectReason
     {
@@ -95,6 +99,7 @@ class DBusConnection : IDisposable
         _pendingCalls = new();
         _matchMakers = new();
         _matchedObservers = new();
+        _pathHandlers = new();
     }
 
     public async ValueTask ConnectAsync(string address, string? userId, bool supportsFdPassing, CancellationToken cancellationToken)
@@ -148,8 +153,8 @@ class DBusConnection : IDisposable
                 await stream.DoClientAuthAsync(guid, userId, supportsFdPassing).ConfigureAwait(false);
 
                 stream.ReceiveMessages(
-                    static (Exception? exception, ref Message message, DBusConnection connection) =>
-                        connection.HandleMessages(exception, ref message), this);
+                    static (Exception? exception, in Message message, DBusConnection connection) =>
+                        connection.HandleMessages(exception, in message), this);
 
                 lock (_gate)
                 {
@@ -185,7 +190,7 @@ class DBusConnection : IDisposable
 
         await CallMethodAsync(
             message: CreateHelloMessage(),
-            static (Exception? exception, ref Message message, object? state) =>
+            static (Exception? exception, in Message message, object? state) =>
             {
                 var tcsState = (TaskCompletionSource<string?>)state!;
 
@@ -219,7 +224,7 @@ class DBusConnection : IDisposable
         }
     }
 
-    private void HandleMessages(Exception? exception, ref Message message)
+    private void HandleMessages(Exception? exception, in Message message)
     {
         if (exception is not null)
         {
@@ -228,6 +233,9 @@ class DBusConnection : IDisposable
         else
         {
             MessageHandler pendingCall = default;
+            IMethodHandler? messageHandler = null;
+
+            bool isMethodCall = message.Type == MessageType.MethodCall;
 
             lock (_gate)
             {
@@ -248,17 +256,80 @@ class DBusConnection : IDisposable
                         _matchedObservers.AddRange(matchMaker.Observers);
                     }
                 }
+
+                if (isMethodCall)
+                {
+                    string path = message.Path.ToString();
+                    if (_pathHandlers.TryGetValue(path, out messageHandler))
+                    {
+
+                    }
+                }
             }
 
             foreach (var observer in _matchedObservers)
             {
-                observer.Emit(ref message);
+                observer.Emit(in message);
             }
             _matchedObservers.Clear();
 
             if (pendingCall.HasValue)
             {
-                pendingCall.Invoke(null, ref message);
+                pendingCall.Invoke(null, in message);
+            }
+
+            if (isMethodCall)
+            {
+                bool handlingMessage = messageHandler is not null && messageHandler.TryHandleMethod(_parentConnection, message);
+
+                if (!handlingMessage)
+                {
+                    SendUnknownMethodError(message);
+                }
+            }
+        }
+
+        void SendUnknownMethodError(in Message methodCall)
+        {
+            if ((methodCall.Flags & MessageFlags.NoReplyExpected) != 0)
+            {
+                return;
+            }
+
+            string errMsg = String.Format("Method \"{0}\" with signature \"{1}\" on interface \"{2}\" doesn't exist",
+                                            methodCall.Member.ToString(),
+                                            methodCall.Signature.ToString(),
+                                            methodCall.Interface.ToString());
+
+            SendErrorReplyMessage(methodCall, "org.freedesktop.DBus.Error.UnknownMethod", errMsg);
+        }
+    }
+
+    public void AddMethodHandlers(IList<IMethodHandler> methodHandlers)
+    {
+        lock (_gate)
+        {
+            int registeredCount = 0;
+
+            try
+            {
+                for (int i = 0; i < methodHandlers.Count; i++)
+                {
+                    IMethodHandler methodHandler = methodHandlers[i];
+
+                    _pathHandlers.Add(methodHandler.Path, methodHandler);
+
+                    registeredCount++;
+                }
+            }
+            catch
+            {
+                for (int i = 0; i < registeredCount; i++)
+                {
+                    IMethodHandler methodHandler = methodHandlers[i];
+
+                    _pathHandlers.Remove(methodHandler.Path);
+                }
             }
         }
     }
@@ -283,7 +354,7 @@ class DBusConnection : IDisposable
             Message message = default;
             foreach (var pendingCall in _pendingCalls.Values)
             {
-                pendingCall.Invoke(new DisconnectedException(disconnectReason), ref message);
+                pendingCall.Invoke(new DisconnectedException(disconnectReason), in message);
             }
             _pendingCalls.Clear();
         }
@@ -303,9 +374,9 @@ class DBusConnection : IDisposable
 
     private ValueTask CallMethodAsync(MessageBuffer message, MessageReceivedHandler returnHandler, object? state)
     {
-        MessageHandlerDelegate fn = static (Exception? exception, ref Message message, object? state1, object? state2, object? state3) =>
+        MessageHandlerDelegate fn = static (Exception? exception, in Message message, object? state1, object? state2, object? state3) =>
         {
-            ((MessageReceivedHandler)state1!)(exception, ref message, state2);
+            ((MessageReceivedHandler)state1!)(exception, in message, state2);
         };
         MessageHandler handler = new(fn, returnHandler, state);
 
@@ -317,19 +388,15 @@ class DBusConnection : IDisposable
         bool messageSent = false;
         try
         {
-            uint nextSerial;
             lock (_gate)
             {
                 if (_state != ConnectionState.Connected)
                 {
                     throw new DisconnectedException(DisconnectReason!);
                 }
-                nextSerial = ++_nextSerial;
                 // TODO: don't add pending call when NoReplyExpected.
-                _pendingCalls.Add(nextSerial, handler);
+                _pendingCalls.Add(message.Serial, handler);
             }
-
-            message.SetSerial(nextSerial);
 
             messageSent = await _messageStream!.TrySendMessageAsync(message);
         }
@@ -344,7 +411,7 @@ class DBusConnection : IDisposable
 
     public async Task<T> CallMethodAsync<T>(MessageBuffer message, MessageValueReader<T> valueReader, object? state = null)
     {
-        MessageHandlerDelegate fn = static (Exception? exception, ref Message message, object? state1, object? state2, object? state3) =>
+        MessageHandlerDelegate fn = static (Exception? exception, in Message message, object? state1, object? state2, object? state3) =>
         {
             var valueReaderState = (MessageValueReader<T>)state1!;
             var tcsState = (TaskCompletionSource<T>)state2!;
@@ -355,7 +422,7 @@ class DBusConnection : IDisposable
             }
             else if (message.Type == MessageType.MethodReturn)
             {
-                tcsState.SetResult(valueReaderState(ref message, state3));
+                tcsState.SetResult(valueReaderState(in message, state3));
             }
             else if (message.Type == MessageType.Error)
             {
@@ -376,7 +443,7 @@ class DBusConnection : IDisposable
         TaskCompletionSource<T> tcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
         MessageHandler handler = new(fn, valueReader, tcs, state);
 
-        await  CallMethodAsync(message, handler);
+        await CallMethodAsync(message, handler);
 
         return await tcs.Task;
     }
@@ -386,12 +453,12 @@ class DBusConnection : IDisposable
         TaskCompletionSource tcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
         await CallMethodAsync(message,
-            static (Exception? exception, ref Message message, object? state) => CompleteCallTaskCompletionSource(exception, ref message, state), tcs);
+            static (Exception? exception, in Message message, object? state) => CompleteCallTaskCompletionSource(exception, in message, state), tcs);
 
         await tcs.Task;
     }
 
-    private static void CompleteCallTaskCompletionSource(Exception? exception, ref Message message, object? tcs)
+    private static void CompleteCallTaskCompletionSource(Exception? exception, in Message message, object? tcs)
     {
         var tcsState = (TaskCompletionSource)tcs!;
 
@@ -421,17 +488,17 @@ class DBusConnection : IDisposable
 
     public ValueTask<IDisposable> AddMatchAsync<T>(MatchRule rule, MessageValueReader<T> valueReader, Action<Exception?, T, object?> valueHandler, object? readerState, object? handlerState, bool subscribe)
     {
-        MessageHandlerDelegate4 fn = static (Exception? exception, ref Message message, object? state1, object? state2, object? state3, object? state4) =>
+        MessageHandlerDelegate4 fn = static (Exception? exception, in Message message, object? state1, object? state2, object? state3, object? state4) =>
         {
             var valueHandlerState = (Action<Exception?, T, object?>)state2!;
             if (exception is not null)
             {
-                valueHandlerState(exception, default(T), state4);
+                valueHandlerState(exception, default(T)!, state4);
             }
             else
             {
                 var valueReaderState = (MessageValueReader<T>)state1!;
-                T value = valueReaderState(ref message, state3);
+                T value = valueReaderState(in message, state3);
                 valueHandlerState(null, value, state4);
             }
         };
@@ -476,16 +543,15 @@ class DBusConnection : IDisposable
             if (sendMessage)
             {
                 matchMaker.AddMatchTcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
-                nextSerial = ++_nextSerial;
 
-                MessageHandlerDelegate fn = static (Exception? exception, ref Message message, object? state1, object? state2, object? state3) =>
+                MessageHandlerDelegate fn = static (Exception? exception, in Message message, object? state1, object? state2, object? state3) =>
                 {
                     var mm = (MatchMaker)state1!;
                     if (message.Type == MessageType.MethodReturn)
                     {
                         mm.HasSubscribed = true;
                     }
-                    CompleteCallTaskCompletionSource(exception, ref message, mm.AddMatchTcs!);
+                    CompleteCallTaskCompletionSource(exception, in message, mm.AddMatchTcs!);
                 };
 
                 _pendingCalls.Add(nextSerial, new(fn, matchMaker));
@@ -497,7 +563,6 @@ class DBusConnection : IDisposable
             if (sendMessage)
             {
                 var message = CreateAddMatchMessage(matchMaker.RuleString);
-                message.SetSerial(nextSerial);
                 if (!await _messageStream!.TrySendMessageAsync(message))
                 {
                     message.ReturnToPool();
@@ -563,13 +628,13 @@ class DBusConnection : IDisposable
 
                 Message message = default;
                 // TODO: signal Dispose without allocating an Exception?
-                _messageHandler.Invoke(new ObjectDisposedException(GetType().FullName), ref message);
+                _messageHandler.Invoke(new ObjectDisposedException(GetType().FullName), in message);
             }
 
             _matchMaker.Connection.RemoveObserver(_matchMaker, this);
         }
 
-        public void Emit(ref Message message)
+        public void Emit(in Message message)
         {
             if (Subscribes && !_matchMaker.HasSubscribed)
             {
@@ -583,7 +648,7 @@ class DBusConnection : IDisposable
                     return;
                 }
 
-                _messageHandler.Invoke(null, ref message);
+                _messageHandler.Invoke(null, in message);
             }
         }
 
@@ -598,7 +663,7 @@ class DBusConnection : IDisposable
                 _disposed = true;
 
                 Message message = default;
-                _messageHandler.Invoke(disconnectedException, ref message);
+                _messageHandler.Invoke(disconnectedException, in message);
             }
         }
     }
@@ -606,7 +671,6 @@ class DBusConnection : IDisposable
     private async void RemoveObserver(MatchMaker matchMaker, Observer observer)
     {
         string ruleString = matchMaker.RuleString;
-        uint nextSerial = 0;
         bool sendMessage = false;
 
         lock (_gate)
@@ -623,7 +687,6 @@ class DBusConnection : IDisposable
                 if (sendMessage)
                 {
                     _matchMakers.Remove(ruleString);
-                    nextSerial = ++_nextSerial;
                 }
             }
         }
@@ -631,8 +694,6 @@ class DBusConnection : IDisposable
         if (sendMessage)
         {
             var message = CreateRemoveMatchMessage();
-            message.SetSerial(nextSerial);
-
             if (!await _messageStream!.TrySendMessageAsync(message))
             {
                 message.ReturnToPool();
@@ -854,5 +915,32 @@ class DBusConnection : IDisposable
         }
     }
 
-    public MessageWriter GetMessageWriter() => new MessageWriter(MessagePool.Shared.Rent());
+    public MessageWriter GetMessageWriter() => _parentConnection.GetMessageWriter();
+
+    public async void SendMessage(MessageBuffer message)
+    {
+        bool messageSent = await _messageStream!.TrySendMessageAsync(message);
+        if (!messageSent)
+        {
+            message.ReturnToPool();
+        }
+    }
+
+    private void SendErrorReplyMessage(in Message methodCall, string errorName, string errorMsg)
+    {
+        SendMessage(CreateErrorMessage(methodCall, errorName, errorMsg));
+
+        MessageBuffer CreateErrorMessage(Message methodCall, string errorName, string errorMsg)
+        {
+            MessageWriter writer = GetMessageWriter();
+
+            writer.WriteError(
+                replySerial: methodCall.Serial,
+                destination: methodCall.Sender,
+                errorName: errorName,
+                errorMsg: errorMsg);
+
+            return writer.CreateMessage();
+        }
+    }
 }

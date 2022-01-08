@@ -1,6 +1,13 @@
 namespace Tmds.DBus.Protocol;
 
-public delegate T MessageValueReader<T>(ref Message message, object? state);
+public delegate T MessageValueReader<T>(in Message message, object? state);
+
+public interface IMethodHandler
+{
+    bool TryHandleMethod(Connection connection, in Message message);
+
+    string Path { get; }
+}
 
 public class Connection : IDisposable
 {
@@ -10,6 +17,8 @@ public class Connection : IDisposable
 
     public static Connection System => s_systemConnection ?? CreateConnection(ref s_systemConnection, Address.System);
     public static Connection Session => s_sessionConnection ?? CreateConnection(ref s_sessionConnection, Address.Session);
+
+    public string? UniqueName => GetConnection()?.UniqueName;
 
     enum ConnectionState
     {
@@ -27,6 +36,7 @@ public class Connection : IDisposable
     private ClientSetupResult? _setupResult;
     private ConnectionState _state;
     private bool _disposed;
+    private int _nextSerial;
 
     public Connection(string address) :
         this(new ClientConnectionOptions(address))
@@ -213,6 +223,14 @@ public class Connection : IDisposable
         return await connection.AddMatchAsync(rule, reader, handler, readerState, handlerState, subscribe);
     }
 
+    public void AddMethodHandler(IMethodHandler methodHandler)
+        => AddMethodHandlers(new[] { methodHandler });
+
+    public void AddMethodHandlers(IList<IMethodHandler> methodHandlers)
+    {
+        GetConnection()?.AddMethodHandlers(methodHandlers);
+    }
+
     private static Connection CreateConnection(ref Connection? field, string? address)
     {
         address = address ?? "unix:";
@@ -231,5 +249,42 @@ public class Connection : IDisposable
         return newConnection;
     }
 
-    public MessageWriter GetMessageWriter() => new MessageWriter(MessagePool.Shared.Rent());
+    public MessageWriter GetMessageWriter() => new MessageWriter(MessagePool.Shared.Rent(), GetNextSerial());
+
+    public bool TrySendMessage(MessageBuffer message)
+    {
+        DBusConnection? connection = GetConnection();
+        if (connection is null)
+        {
+            message.ReturnToPool();
+            return false;
+        }
+        connection.SendMessage(message);
+        return true;
+    }
+
+    private DBusConnection? GetConnection()
+    {
+        lock (_gate)
+        {
+            ThrowHelper.ThrowIfDisposed(_disposed, this);
+
+            if (_connectionOptions.AutoConnect)
+            {
+                throw new InvalidOperationException("Method cannot be used on autoconnect connections.");
+            }
+
+            ConnectionState state = _state;
+
+            if (state == ConnectionState.Created ||
+                state == ConnectionState.Connecting)
+            {
+                throw new InvalidOperationException("Connect before using this method.");
+            }
+
+            return _connection;
+        }
+    }
+
+    internal uint GetNextSerial() => (uint)Interlocked.Increment(ref _nextSerial);
 }

@@ -1,56 +1,120 @@
-﻿using System;
-using System.Text;
-using Tmds.DBus.Protocol;
+﻿using Tmds.DBus.Protocol;
 
 class Program
 {
     static async Task Main()
     {
-        NetworkManagerExample();
+        string peerName = await StartAddServiceAsync();
 
         var connection = Connection.Session;
 
-        // await connection.CallMethodAsync(CreateHelloMessage(connection));
+        var addProxy = new AddProxy(connection, peerName);
 
-        Console.WriteLine("Press any key to stop the application.");
-        Console.WriteLine();
+        int sum = await addProxy.AddAsync(10, 20);
 
-        Console.ReadLine();
+        Console.WriteLine(sum);
     }
 
-    private static async void NetworkManagerExample()
+    private async static Task<string> StartAddServiceAsync()
     {
-        var nm = new NetworkManager(Connection.System);
+        var connection = new Connection(Address.Session!);
 
-        foreach (var device in await nm.GetDevicesAsync())
+        await connection.ConnectAsync();
+
+        connection.AddMethodHandler(new AddImplementation());
+
+        return connection.UniqueName ?? "";
+    }
+
+    // private static void PrintMessage(in Message message)
+    // {
+    //     StringBuilder sb = new();
+    //     MessageFormatter.FormatMessage(message, sb);
+    //     Console.WriteLine(sb.ToString());
+    // }
+}
+
+class AddProxy
+{
+    private const string Interface = "org.example.Adder";
+    private const string Path = "/org/example/Adder";
+
+    private readonly Connection _connection;
+    private readonly string _peer;
+
+    public AddProxy(Connection connection, string peer)
+    {
+        _connection = connection;
+        _peer = peer;
+    }
+
+    public Task<int> AddAsync(int i, int j)
+    {
+        return _connection.CallMethodAsync(CreateAddMessage(),
+            (in Message message, object? state) =>
+            {
+                return message.GetBodyReader().ReadInt32();
+            });
+
+        MessageBuffer CreateAddMessage()
         {
-            Console.WriteLine(device);
+            var writer = _connection.GetMessageWriter();
 
-            await device.WatchStateChangedAsync(
-                static (Exception? ex, (DeviceState, DeviceState) change, object? state) =>
-                {
-                    Console.WriteLine($"{state} {change.Item1} -> {change.Item2}");
-                }, device);
+            writer.WriteMethodCallHeader(
+                destination: _peer,
+                path: Path,
+                @interface: Interface,
+                signature: "ii",
+                member: "Add");
+
+            writer.WriteInt32(i);
+            writer.WriteInt32(j);
+
+            return writer.CreateMessage();
         }
     }
+}
 
-    private static void PrintMessage(in Message message)
+class AddImplementation : IMethodHandler
+{
+    public string Path => "/org/example/Adder";
+
+    public bool TryHandleMethod(Connection connection, in Message message)
     {
-        StringBuilder sb = new();
-        MessageFormatter.FormatMessage(message, sb);
-        Console.WriteLine(sb.ToString());
+        string method = message.Member.ToString();
+        string sig = message.Signature.ToString();
+        switch ((method, sig))
+        {
+            case ("Add", "ii"):
+                Add(connection, message);
+                return true;
+        }
+
+        return false;
     }
 
-    private static MessageBuffer CreateHelloMessage(Connection connection)
+    private void Add(Connection connection, in Message message)
     {
-        MessageWriter writer = connection.GetMessageWriter();
+        var reader = message.GetBodyReader();
 
-        writer.WriteMethodCallHeader(
-            destination: "org.freedesktop.DBus",
-            path: "/org/freedesktop/DBus",
-            @interface: "org.freedesktop.DBus",
-            member: "Hello");
+        int i = reader.ReadInt32();
+        int j = reader.ReadInt32();
 
-        return writer.CreateMessage();
+        connection.TrySendMessage(CreateResponseMessage(message));
+
+        MessageBuffer CreateResponseMessage(in Message message)
+        {
+            var writer = connection.GetMessageWriter();
+
+            writer.WriteMethodReturnHeader(
+                replySerial: message.Serial,
+                destination: message.Sender,
+                signature: "i"
+            );
+
+            writer.WriteInt32(i + j);
+
+            return writer.CreateMessage();
+        }
     }
 }

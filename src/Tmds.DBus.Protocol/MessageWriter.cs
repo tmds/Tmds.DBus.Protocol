@@ -2,7 +2,14 @@ namespace Tmds.DBus.Protocol;
 
 public ref struct MessageWriter
 {
+    private const int LengthOffset = 4;
+    private const int SerialOffset = 8;
+    private const int HeaderFieldsLengthOffset = 12;
+    private const int UnixFdLengthOffset = 20;
+
     private readonly MessageBuffer _message;
+    private readonly uint _serial;
+    private Span<byte> _firstSpan;
     private Span<byte> _span;
     private int _offset;
     private int _buffered;
@@ -11,7 +18,32 @@ public ref struct MessageWriter
     {
         Flush();
 
+        CompleteMessage();
+
         return _message;
+    }
+
+    private void CompleteMessage()
+    {
+        Span<byte> span = _firstSpan;
+
+        // Length
+        uint headerFieldsLength = Unsafe.ReadUnaligned<uint>(ref MemoryMarshal.GetReference(span.Slice(HeaderFieldsLengthOffset)));
+        uint pad = headerFieldsLength % 8;
+        if (pad != 0)
+        {
+            headerFieldsLength += (8 - pad);
+        }
+        uint length = (uint)_message.Length             // Total length
+                      - headerFieldsLength               // Header fields
+                      - 4                                // Header fields length
+                      - (uint)HeaderFieldsLengthOffset;  // Preceeding header fields
+        Unsafe.WriteUnaligned<uint>(ref MemoryMarshal.GetReference(span.Slice(LengthOffset)), length);
+
+        // UnixFdLength
+        Unsafe.WriteUnaligned<uint>(ref MemoryMarshal.GetReference(span.Slice(UnixFdLengthOffset)), (uint)_message.HandleCount);
+
+        _message.Serial = _serial;
     }
 
     private IBufferWriter<byte> Writer
@@ -23,12 +55,13 @@ public ref struct MessageWriter
         }
     }
 
-    internal MessageWriter(MessageBuffer message)
+    internal MessageWriter(MessageBuffer message, uint serial)
     {
         _message = message;
         _offset = 0;
         _buffered = 0;
-        _span = _message.GetSpan(sizeHint: 0);
+        _serial = serial;
+        _firstSpan = _span = _message.GetSpan(sizeHint: 0);
     }
 
     public void WriteMethodCallHeader(
@@ -86,13 +119,18 @@ public ref struct MessageWriter
 
     public void WriteMethodReturnHeader(
         uint replySerial,
-        string? destination = null,
+        Utf8Span destination = default,
         string? signature = null)
     {
         ArrayStart start = WriteHeaderStart(MessageType.MethodReturn, MessageFlags.None);
 
+       // ReplySerial
+        WriteStructureStart();
+        WriteByte((byte)MessageHeader.ReplySerial);
+        WriteVariantUInt32(replySerial);
+
         // Destination.
-        if (destination is not null)
+        if (!destination.IsEmpty)
         {
             WriteStructureStart();
             WriteByte((byte)MessageHeader.Destination);
@@ -110,16 +148,21 @@ public ref struct MessageWriter
         WriteHeaderEnd(ref start);
     }
 
-    public void WriteErrorHeader(
+    public void WriteError(
         uint replySerial,
-        string? destination = null,
-        string? signature = null,
-        string? errorName = null)
+        Utf8Span destination = default,
+        string? errorName = null,
+        string? errorMsg = null)
     {
         ArrayStart start = WriteHeaderStart(MessageType.Error, MessageFlags.None);
 
+       // ReplySerial
+        WriteStructureStart();
+        WriteByte((byte)MessageHeader.ReplySerial);
+        WriteVariantUInt32(replySerial);
+
         // Destination.
-        if (destination is not null)
+        if (!destination.IsEmpty)
         {
             WriteStructureStart();
             WriteByte((byte)MessageHeader.Destination);
@@ -135,14 +178,19 @@ public ref struct MessageWriter
         }
 
         // Signature.
-        if (signature is not null)
+        if (errorMsg is not null)
         {
             WriteStructureStart();
             WriteByte((byte)MessageHeader.Signature);
-            WriteVariantSignature(signature);
+            WriteVariantSignature(ProtocolConstants.StringSignature);
         }
 
         WriteHeaderEnd(ref start);
+
+        if (errorMsg is not null)
+        {
+            WriteString(errorMsg);
+        }
     }
 
     public void WriteSignalHeader(
@@ -210,9 +258,9 @@ public ref struct MessageWriter
         WriteByte((byte)flags);
         WriteByte((byte)1); // version
         WriteUInt32((uint)0); // length placeholder
-        Debug.Assert(_offset == MessageBuffer.LengthOffset + 4);
-        WriteUInt32((uint)0); // serial placeholder
-        Debug.Assert(_offset == MessageBuffer.SerialOffset + 4);
+        Debug.Assert(_offset == LengthOffset + 4);
+        WriteUInt32(_serial);
+        Debug.Assert(_offset == SerialOffset + 4);
 
         // headers
         ArrayStart start = WriteArrayStart(DBusType.Struct);
@@ -221,7 +269,7 @@ public ref struct MessageWriter
         WriteStructureStart();
         WriteByte((byte)MessageHeader.UnixFds);
         WriteVariantUInt32(0); // unix fd length placeholder
-        Debug.Assert(_offset == MessageBuffer.UnixFdLengthOffset + 4);
+        Debug.Assert(_offset == UnixFdLengthOffset + 4);
         return start;
     }
 
