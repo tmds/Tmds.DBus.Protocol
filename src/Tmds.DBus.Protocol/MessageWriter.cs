@@ -1,7 +1,11 @@
+using System.Reflection;
+
 namespace Tmds.DBus.Protocol;
 
 public ref struct MessageWriter
 {
+    private delegate void ValueWriter(ref MessageWriter writer, object value);
+
     private const int LengthOffset = 4;
     private const int SerialOffset = 8;
     private const int HeaderFieldsLengthOffset = 12;
@@ -367,6 +371,456 @@ public ref struct MessageWriter
     //     Write(writer.Signature);
     //     writer.Write(ref this, value);
     // }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public void WriteDictionary<TKey, TValue>(IDictionary<TKey, TValue> value)
+    {
+        ArrayStart arrayStart = WriteArrayStart(DBusType.Struct);
+        foreach (var item in value)
+        {
+            WriteStructureStart();
+            Write<TKey>(item.Key);
+            Write<TValue>(item.Value);
+        }
+        WriteArrayEnd(ref arrayStart);
+    }
+
+    private static void WriteDictionaryCore<TKey, TValue>(ref MessageWriter writer, object o)
+    {
+        writer.WriteDictionary<TKey, TValue>((IDictionary<TKey, TValue>)o);
+    }
+
+    private void WriteDictionaryTyped(Type keyType, Type valueType, object o)
+    {
+        var method = typeof(MessageWriter).GetMethod(nameof(WriteDictionaryCore), BindingFlags.Static | BindingFlags.NonPublic)
+            .MakeGenericMethod(new[] { keyType, valueType });
+        var dlg = method!.CreateDelegate<ValueWriter>();
+        dlg.Invoke(ref this, o);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public void WriteArray<T>(T[] value)
+    {
+        ArrayStart arrayStart = WriteArrayStart(GetTypeAlignment<T>());
+        foreach (T item in value)
+        {
+            Write<T>(item);
+        }
+        WriteArrayEnd(ref arrayStart);
+    }
+
+    private static void WriteArrayCore<TElement>(ref MessageWriter writer, object o)
+    {
+        writer.WriteArray<TElement>((TElement[])o);
+    }
+
+    private void WriteArrayTyped(Type elementType, object o)
+    {
+        var method = typeof(MessageWriter).GetMethod(nameof(WriteArrayCore), BindingFlags.Static | BindingFlags.NonPublic)
+            .MakeGenericMethod(new[] { elementType });
+        var dlg = method!.CreateDelegate<ValueWriter>();
+        dlg.Invoke(ref this, o);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public void WriteStruct<T1>(T1 item1)
+    {
+        WriteStructureStart();
+        Write<T1>(item1);
+    }
+
+    private static void WriteValueTuple1Core<T1>(ref MessageWriter writer, object o)
+    {
+        var value = (ValueTuple<T1>)o;
+        writer.WriteStruct(value.Item1);
+    }
+
+    private void WriteValueTuple1Typed(Type t1Type, object o)
+    {
+        var method = typeof(MessageWriter).GetMethod(nameof(WriteValueTuple1Core), BindingFlags.Static | BindingFlags.NonPublic)
+            .MakeGenericMethod(new[] { t1Type });
+        var dlg = method!.CreateDelegate<ValueWriter>();
+        dlg.Invoke(ref this, o);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public void WriteStruct<T1, T2>(T1 item1, T2 item2)
+    {
+        WriteStructureStart();
+        Write<T1>(item1);
+        Write<T2>(item2);
+    }
+
+    private static void WriteValueTuple2Core<T1, T2>(ref MessageWriter writer, object o)
+    {
+        var value = (ValueTuple<T1, T2>)o;
+        writer.WriteStruct(value.Item1, value.Item2);
+    }
+
+    private void WriteValueTuple2Typed(Type t1Type, Type t2Type, object o)
+    {
+        var method = typeof(MessageWriter).GetMethod(nameof(WriteValueTuple2Core), BindingFlags.Static | BindingFlags.NonPublic)
+            .MakeGenericMethod(new[] { t1Type, t2Type });
+        var dlg = method!.CreateDelegate<ValueWriter>();
+        dlg.Invoke(ref this, o);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private void Write<T>(T value)
+    {
+        Type type = typeof(T);
+
+        if (type == typeof(object))
+        {
+            type = value!.GetType();
+
+            // Variant: write signature.
+            WriteSignatureTyped(type);
+        }
+
+        if (type == typeof(byte))
+        {
+            WriteByte((byte)(object)value);
+            return;
+        }
+        else if (type == typeof(bool))
+        {
+            WriteBool((bool)(object)value);
+            return;
+        }
+        else if (type == typeof(Int16))
+        {
+            WriteInt16((Int16)(object)value);
+            return;
+        }
+        else if (type == typeof(UInt16))
+        {
+            WriteUInt16((UInt16)(object)value);
+            return;
+        }
+        else if (type == typeof(Int32))
+        {
+            WriteInt32((Int32)(object)value);
+            return;
+        }
+        else if (type == typeof(UInt32))
+        {
+            WriteUInt32((UInt32)(object)value);
+            return;
+        }
+        else if (type == typeof(Int64))
+        {
+            WriteInt64((Int64)(object)value);
+            return;
+        }
+        else if (type == typeof(UInt64))
+        {
+            WriteUInt64((UInt64)(object)value);
+            return;
+        }
+        else if (type == typeof(Double))
+        {
+            WriteDouble((double)(object)value);
+            return;
+        }
+        else if (type == typeof(String))
+        {
+            WriteString((string)(object)value);
+            return;
+        }
+        else if (type == typeof(ObjectPath))
+        {
+            WriteString(((ObjectPath)(object)value).ToString());
+            return;
+        }
+        else if (type == typeof(Signature))
+        {
+            WriteString(((Signature)(object)value).ToString());
+            return;
+        }
+        if (type.IsAssignableTo(typeof(SafeHandle)))
+        {
+            WriteHandle((SafeHandle)(object)value);
+            return;
+        }
+        else
+        {
+            if (type.IsArray)
+            {
+                var rank = type.GetArrayRank();
+                if (rank == 1)
+                {
+                    WriteArrayTyped(type.GetElementType()!, (object)value!);
+                    return;
+                }
+            }
+            else if (type.IsGenericType && type.FullName!.StartsWith("System.ValueTuple"))
+            {
+                switch (type.GenericTypeArguments.Length)
+                {
+                    case 1:
+                        WriteValueTuple1Typed(type.GenericTypeArguments[0], (object)value);
+                        return;
+                    case 2:
+                        WriteValueTuple2Typed(type.GenericTypeArguments[0], type.GenericTypeArguments[1], (object)value);
+                        return;
+                }
+            }
+            else
+            {
+                Type? extractedType = ExtractGenericInterface(type, typeof(IDictionary<,>));
+                if (extractedType != null)
+                {
+                    WriteDictionaryTyped(extractedType.GenericTypeArguments[0], extractedType.GenericTypeArguments[1], (object)value!);
+                    return;
+                }
+            }
+        }
+        ThrowNotSupportedType(type);
+    }
+
+    private static void ThrowNotSupportedType(Type type)
+    {
+        throw new NotSupportedException($"Cannot write type {type.FullName}");
+    }
+
+    private static Type? ExtractGenericInterface(Type queryType, Type interfaceType)
+    {
+        if (IsGenericInstantiation(queryType, interfaceType))
+        {
+            return queryType;
+        }
+
+        return GetGenericInstantiation(queryType, interfaceType);
+    }
+
+    private static bool IsGenericInstantiation(Type candidate, Type interfaceType)
+    {
+        return
+            candidate.IsGenericType &&
+            candidate.GetGenericTypeDefinition() == interfaceType;
+    }
+
+    private static Type? GetGenericInstantiation(Type queryType, Type interfaceType)
+    {
+        Type? bestMatch = null;
+        var interfaces = queryType.GetInterfaces();
+        foreach (var @interface in interfaces)
+        {
+            if (IsGenericInstantiation(@interface, interfaceType))
+            {
+                if (bestMatch == null)
+                {
+                    bestMatch = @interface;
+                }
+                else if (StringComparer.Ordinal.Compare(@interface.FullName, bestMatch.FullName) < 0)
+                {
+                    bestMatch = @interface;
+                }
+            }
+        }
+
+        if (bestMatch != null)
+        {
+            return bestMatch;
+        }
+
+        var baseType = queryType?.BaseType;
+        if (baseType == null)
+        {
+            return null;
+        }
+        else
+        {
+            return GetGenericInstantiation(baseType, interfaceType);
+        }
+    }
+
+    private void WriteSignatureTyped(Type type)
+    {
+        Span<byte> signature = stackalloc byte[256];
+        int bytesWritten = WriteSignatureTyped(type, signature);
+        WriteSignature(MemoryMarshal.CreateReadOnlySpan(ref MemoryMarshal.GetReference(signature), bytesWritten));
+    }
+
+    private static int WriteSignatureTyped(Type type, Span<byte> signature)
+    {
+        Type? extractedType;
+        if (type == typeof(object))
+        {
+            signature[0] = (byte)DBusType.Variant;
+            return 1;
+        }
+        else if (type == typeof(byte))
+        {
+            signature[0] = (byte)DBusType.Byte;
+            return 1;
+        }
+        else if (type == typeof(bool))
+        {
+            signature[0] = (byte)DBusType.Bool;
+            return 1;
+        }
+        else if (type == typeof(Int16))
+        {
+            signature[0] = (byte)DBusType.Int16;
+            return 1;
+        }
+        else if (type == typeof(UInt16))
+        {
+            signature[0] = (byte)DBusType.UInt16;
+            return 1;
+        }
+        else if (type == typeof(Int32))
+        {
+            signature[0] = (byte)DBusType.Int32;
+            return 1;
+        }
+        else if (type == typeof(UInt32))
+        {
+            signature[0] = (byte)DBusType.UInt32;
+            return 1;
+        }
+        else if (type == typeof(Int64))
+        {
+            signature[0] = (byte)DBusType.Int64;
+            return 1;
+        }
+        else if (type == typeof(UInt64))
+        {
+            signature[0] = (byte)DBusType.UInt64;
+            return 1;
+        }
+        else if (type == typeof(Double))
+        {
+            signature[0] = (byte)DBusType.Double;
+            return 1;
+        }
+        else if (type == typeof(String))
+        {
+            signature[0] = (byte)DBusType.String;
+            return 1;
+        }
+        else if (type == typeof(ObjectPath))
+        {
+            signature[0] = (byte)DBusType.ObjectPath;
+            return 1;
+        }
+        else if (type == typeof(Signature))
+        {
+            signature[0] = (byte)DBusType.Signature;
+            return 1;
+        }
+        else if (type.IsArray)
+        {
+            int bytesWritten = 0;
+            signature[bytesWritten++] = (byte)DBusType.Array;
+            bytesWritten += WriteSignatureTyped(type.GetElementType()!, signature.Slice(bytesWritten));
+            return bytesWritten;
+        }
+        else if (type.FullName!.StartsWith("System.ValueTuple"))
+        {
+            int bytesWritten = 0;
+            signature[bytesWritten++] = (byte)'(';
+            foreach (var itemType in type.GenericTypeArguments)
+            {
+                bytesWritten += WriteSignatureTyped(itemType, signature.Slice(bytesWritten));
+            }
+            signature[bytesWritten++] = (byte)')';
+            return bytesWritten;
+        }
+        else if ((extractedType = ExtractGenericInterface(type, typeof(IDictionary<,>))) != null)
+        {
+            int bytesWritten = 0;
+            signature[bytesWritten++] = (byte)'a';
+            signature[bytesWritten++] = (byte)'{';
+            bytesWritten += WriteSignatureTyped(extractedType.GenericTypeArguments[0], signature.Slice(bytesWritten));
+            bytesWritten += WriteSignatureTyped(extractedType.GenericTypeArguments[1], signature.Slice(bytesWritten));
+            signature[bytesWritten++] = (byte)'}';
+            return bytesWritten;
+        }
+        else if (type.IsAssignableTo(typeof(SafeHandle)))
+        {
+            signature[0] = (byte)DBusType.UnixFd;
+            return 1;
+        }
+        return 0;
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static DBusType GetTypeAlignment<T>()
+    {
+        if (typeof(T) == typeof(object))
+        {
+            return DBusType.Variant;
+        }
+        else if (typeof(T) == typeof(byte))
+        {
+            return DBusType.Byte;
+        }
+        else if (typeof(T) == typeof(bool))
+        {
+            return DBusType.Bool;
+        }
+        else if (typeof(T) == typeof(Int16))
+        {
+            return DBusType.Int16;
+        }
+        else if (typeof(T) == typeof(UInt16))
+        {
+            return DBusType.UInt16;
+        }
+        else if (typeof(T) == typeof(Int32))
+        {
+            return DBusType.Int32;
+        }
+        else if (typeof(T) == typeof(UInt32))
+        {
+            return DBusType.UInt32;
+        }
+        else if (typeof(T) == typeof(Int64))
+        {
+            return DBusType.Int64;
+        }
+        else if (typeof(T) == typeof(UInt64))
+        {
+            return DBusType.UInt64;
+        }
+        else if (typeof(T) == typeof(Double))
+        {
+            return DBusType.Double;
+        }
+        else if (typeof(T) == typeof(String))
+        {
+            return DBusType.String;
+        }
+        else if (typeof(T) == typeof(ObjectPath))
+        {
+            return DBusType.ObjectPath;
+        }
+        else if (typeof(T) == typeof(Signature))
+        {
+            return DBusType.Signature;
+        }
+        else if (typeof(T).IsArray)
+        {
+            return DBusType.Array;
+        }
+        else if (ExtractGenericInterface(typeof(T), typeof(IDictionary<,>)) != null)
+        {
+            return DBusType.Array;
+        }
+        else if (typeof(T).IsAssignableTo(typeof(SafeHandle)))
+        {
+            return DBusType.UnixFd;
+        }
+        return DBusType.Struct;
+    }
+
+    public void WriteVariant(object o)
+    {
+        Write<object>(o);
+    }
 
     public void WriteVariantBool(bool value)
     {
