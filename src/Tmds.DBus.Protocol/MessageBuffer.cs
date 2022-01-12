@@ -37,6 +37,14 @@ public sealed class MessageBuffer
 
     internal ReadOnlySequence<byte> AsReadOnlySequence() => _sequence.AsReadOnlySequence;
 
+    internal Message GetMessage()
+    {
+        var sequence = AsReadOnlySequence();
+        bool messageRead = Message.TryReadMessage(ref sequence, out Message message, null);
+        Debug.Assert(messageRead);
+        return message;
+    }
+
     internal IReadOnlyList<SafeHandle>? Handles =>
         _readonlyCollection ?? (_readonlyCollection = _handles?.AsReadOnly());
 }

@@ -50,7 +50,8 @@ class AddProxy
 
     public Task<int> AddAsync(int i, int j)
     {
-        return _connection.CallMethodAsync(CreateAddMessage(),
+        return _connection.CallMethodAsync(
+            CreateAddMessage(),
             (in Message message, object? state) =>
             {
                 return message.GetBodyReader().ReadInt32();
@@ -83,6 +84,7 @@ class AddImplementation : IMethodHandler
     {
         string method = message.Member.ToString();
         string sig = message.Signature.ToString();
+
         switch ((method, sig))
         {
             case ("Add", "ii"):
@@ -100,9 +102,11 @@ class AddImplementation : IMethodHandler
         int i = reader.ReadInt32();
         int j = reader.ReadInt32();
 
-        connection.TrySendMessage(CreateResponseMessage(message));
+        int sum = i + j;
 
-        MessageBuffer CreateResponseMessage(in Message message)
+        connection.TrySendMessage(CreateResponseMessage(connection, message, sum));
+
+        static MessageBuffer CreateResponseMessage(Connection connection, in Message message, int sum)
         {
             var writer = connection.GetMessageWriter();
 
@@ -112,7 +116,7 @@ class AddImplementation : IMethodHandler
                 signature: "i"
             );
 
-            writer.WriteInt32(i + j);
+            writer.WriteInt32(sum);
 
             return writer.CreateMessage();
         }
