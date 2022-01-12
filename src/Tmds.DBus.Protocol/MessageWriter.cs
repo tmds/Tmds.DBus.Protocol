@@ -401,7 +401,7 @@ public ref struct MessageWriter
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void WriteArray<T>(T[] value)
     {
-        ArrayStart arrayStart = WriteArrayStart(GetTypeAlignment<T>());
+        ArrayStart arrayStart = WriteArrayStart(TypeMarshalling.GetTypeAlignment<T>());
         foreach (T item in value)
         {
             Write<T>(item);
@@ -538,7 +538,7 @@ public ref struct MessageWriter
             WriteString(((Signature)(object)value).ToString());
             return;
         }
-        if (type.IsAssignableTo(typeof(SafeHandle)))
+        else if (type.IsAssignableTo(typeof(SafeHandle)))
         {
             WriteHandle((SafeHandle)(object)value);
             return;
@@ -568,7 +568,7 @@ public ref struct MessageWriter
             }
             else
             {
-                Type? extractedType = ExtractGenericInterface(type, typeof(IDictionary<,>));
+                Type? extractedType = TypeMarshalling.ExtractGenericInterface(type, typeof(IDictionary<,>));
                 if (extractedType != null)
                 {
                     WriteDictionaryTyped(extractedType.GenericTypeArguments[0], extractedType.GenericTypeArguments[1], (object)value!);
@@ -582,58 +582,6 @@ public ref struct MessageWriter
     private static void ThrowNotSupportedType(Type type)
     {
         throw new NotSupportedException($"Cannot write type {type.FullName}");
-    }
-
-    private static Type? ExtractGenericInterface(Type queryType, Type interfaceType)
-    {
-        if (IsGenericInstantiation(queryType, interfaceType))
-        {
-            return queryType;
-        }
-
-        return GetGenericInstantiation(queryType, interfaceType);
-    }
-
-    private static bool IsGenericInstantiation(Type candidate, Type interfaceType)
-    {
-        return
-            candidate.IsGenericType &&
-            candidate.GetGenericTypeDefinition() == interfaceType;
-    }
-
-    private static Type? GetGenericInstantiation(Type queryType, Type interfaceType)
-    {
-        Type? bestMatch = null;
-        var interfaces = queryType.GetInterfaces();
-        foreach (var @interface in interfaces)
-        {
-            if (IsGenericInstantiation(@interface, interfaceType))
-            {
-                if (bestMatch == null)
-                {
-                    bestMatch = @interface;
-                }
-                else if (StringComparer.Ordinal.Compare(@interface.FullName, bestMatch.FullName) < 0)
-                {
-                    bestMatch = @interface;
-                }
-            }
-        }
-
-        if (bestMatch != null)
-        {
-            return bestMatch;
-        }
-
-        var baseType = queryType?.BaseType;
-        if (baseType == null)
-        {
-            return null;
-        }
-        else
-        {
-            return GetGenericInstantiation(baseType, interfaceType);
-        }
     }
 
     private void WriteSignatureTyped(Type type)
@@ -729,7 +677,7 @@ public ref struct MessageWriter
             signature[bytesWritten++] = (byte)')';
             return bytesWritten;
         }
-        else if ((extractedType = ExtractGenericInterface(type, typeof(IDictionary<,>))) != null)
+        else if ((extractedType = TypeMarshalling.ExtractGenericInterface(type, typeof(IDictionary<,>))) != null)
         {
             int bytesWritten = 0;
             signature[bytesWritten++] = (byte)'a';
@@ -745,76 +693,6 @@ public ref struct MessageWriter
             return 1;
         }
         return 0;
-    }
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static DBusType GetTypeAlignment<T>()
-    {
-        if (typeof(T) == typeof(object))
-        {
-            return DBusType.Variant;
-        }
-        else if (typeof(T) == typeof(byte))
-        {
-            return DBusType.Byte;
-        }
-        else if (typeof(T) == typeof(bool))
-        {
-            return DBusType.Bool;
-        }
-        else if (typeof(T) == typeof(Int16))
-        {
-            return DBusType.Int16;
-        }
-        else if (typeof(T) == typeof(UInt16))
-        {
-            return DBusType.UInt16;
-        }
-        else if (typeof(T) == typeof(Int32))
-        {
-            return DBusType.Int32;
-        }
-        else if (typeof(T) == typeof(UInt32))
-        {
-            return DBusType.UInt32;
-        }
-        else if (typeof(T) == typeof(Int64))
-        {
-            return DBusType.Int64;
-        }
-        else if (typeof(T) == typeof(UInt64))
-        {
-            return DBusType.UInt64;
-        }
-        else if (typeof(T) == typeof(Double))
-        {
-            return DBusType.Double;
-        }
-        else if (typeof(T) == typeof(String))
-        {
-            return DBusType.String;
-        }
-        else if (typeof(T) == typeof(ObjectPath))
-        {
-            return DBusType.ObjectPath;
-        }
-        else if (typeof(T) == typeof(Signature))
-        {
-            return DBusType.Signature;
-        }
-        else if (typeof(T).IsArray)
-        {
-            return DBusType.Array;
-        }
-        else if (ExtractGenericInterface(typeof(T), typeof(IDictionary<,>)) != null)
-        {
-            return DBusType.Array;
-        }
-        else if (typeof(T).IsAssignableTo(typeof(SafeHandle)))
-        {
-            return DBusType.UnixFd;
-        }
-        return DBusType.Struct;
     }
 
     public void WriteVariant(object o)
@@ -1026,33 +904,3 @@ public ref struct ArrayStart
         _span = default;
     }
 }
-
-// class GeneratedWriters
-// {
-//     public static readonly GeneratedWriters Instance = new GeneratedWriters();
-
-//     public IValueWriter<T> GetWriter<T>()
-//     {
-//         object writer = new IntWriter();
-//         return (IValueWriter<T>)writer;
-//     }
-// }
-
-// sealed class IntWriter : IValueWriter<int>
-// {
-//     private static ReadOnlySpan<byte> s_signature => new byte[] { (byte)'i' };
-//     public int Alignment => 4;
-//     public Utf8Span Signature => new Utf8Span(s_signature);
-
-//     public void Write(ref MessageWriter writer, int value)
-//     {
-//         throw new NotImplementedException();
-//     }
-// }
-
-// interface IValueWriter<T>
-// {
-//     void Write(ref MessageWriter writer, T value);
-//     int Alignment { get; }
-//     Utf8Span Signature { get; }
-// }
