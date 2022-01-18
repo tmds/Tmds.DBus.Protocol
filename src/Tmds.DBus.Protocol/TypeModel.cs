@@ -61,7 +61,7 @@ static class TypeModel
         {
             return DBusType.Array;
         }
-        else if (ExtractGenericInterface(typeof(T), typeof(IDictionary<,>)) != null)
+        else if (ExtractGenericInterface(typeof(T), typeof(System.Collections.Generic.IEnumerable<>)) != null)
         {
             return DBusType.Array;
         }

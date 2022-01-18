@@ -137,7 +137,7 @@ public ref struct Reader
 
     public ValueTuple<T1> ReadStruct<T1>()
     {
-        return new ValueTuple<T1>(Read<T1>());;
+        return new ValueTuple<T1>(Read<T1>()); ;
     }
 
     private static object ReadValueTuple1Core<T1>(ref Reader reader)
@@ -155,7 +155,7 @@ public ref struct Reader
 
     public ValueTuple<T1, T2> ReadStruct<T1, T2>()
     {
-        return new ValueTuple<T1, T2>(Read<T1>(), Read<T2>());;
+        return new ValueTuple<T1, T2>(Read<T1>(), Read<T2>()); ;
     }
 
     private static object ReadValueTuple2Core<T1, T2>(ref Reader reader)
@@ -347,8 +347,8 @@ public ref struct Reader
         return ReadSpan(length);
     }
 
-     private ReadOnlySpan<byte> ReadSpan(int length)
-     {
+    private ReadOnlySpan<byte> ReadSpan(int length)
+    {
         var span = _reader.UnreadSpan;
         if (span.Length <= length)
         {
@@ -365,7 +365,7 @@ public ref struct Reader
             _reader.Advance(length + 1);
             return new ReadOnlySpan<byte>(buffer);
         }
-     }
+    }
 
     public void AlignReader(DBusType type)
     {

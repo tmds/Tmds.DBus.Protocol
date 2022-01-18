@@ -1,4 +1,4 @@
-using System.IO.Pipelines ;
+using System.IO.Pipelines;
 using System.Net.Sockets;
 using System.Threading.Channels;
 
@@ -330,7 +330,7 @@ class MessageStream : IMessageStream
             Span<byte> span = dst.Span;
             src.CopyTo(span);
             span = span.Slice(0, (int)src.Length);
-            if (!span.EndsWith((ReadOnlySpan<byte>) new byte [] { (byte)'\r' }))
+            if (!span.EndsWith((ReadOnlySpan<byte>)new byte[] { (byte)'\r' }))
             {
                 throw new ProtocolException("Authentication messages from server must end with '\\r\\n'.");
             }

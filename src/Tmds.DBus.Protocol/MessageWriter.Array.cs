@@ -1,57 +1,83 @@
-// using System.Reflection;
+using System.Reflection;
 
-// namespace Tmds.DBus.Protocol;
+namespace Tmds.DBus.Protocol;
 
-// public ref partial struct MessageWriter
-// {
-//     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-//     public void WriteArray<T>(T[] value)
-//     {
-//         ArrayStart arrayStart = WriteArrayStart(TypeMarshalling.GetTypeAlignment<T>());
-//         foreach (T item in value)
-//         {
-//             Write<T>(item);
-//         }
-//         WriteArrayEnd(ref arrayStart);
-//     }
+public ref partial struct MessageWriter
+{
+    public void WriteArray<T>(IEnumerable<T> value)
+        where T : notnull
+    {
+        ArrayStart arrayStart = WriteArrayStart(TypeModel.GetTypeAlignment<T>());
+        foreach (var item in value)
+        {
+            WriteStructureStart();
+            Write<T>(item);
+        }
+        WriteArrayEnd(ref arrayStart);
+    }
 
-//     private static void WriteArrayCore<TElement>(ref MessageWriter writer, object o)
-//     {
-//         writer.WriteArray<TElement>((TElement[])o);
-//     }
+    public void WriteArray<T>(T[] value)
+        where T : notnull
+    {
+        ArrayStart arrayStart = WriteArrayStart(TypeModel.GetTypeAlignment<T>());
+        foreach (var item in value)
+        {
+            WriteStructureStart();
+            Write<T>(item);
+        }
+        WriteArrayEnd(ref arrayStart);
+    }
 
-//     private void WriteArrayTyped(Type elementType, object o)
-//     {
-//         if (RuntimeFeature.IsDynamicCodeSupported)
-//         {
-//             var method = typeof(MessageWriter).GetMethod(nameof(WriteArrayCore), BindingFlags.Static | BindingFlags.NonPublic)
-//                 .MakeGenericMethod(new[] { elementType });
-//             var dlg = method!.CreateDelegate<ValueWriter>();
-//             dlg.Invoke(ref this, o);
-//         }
-//         else
-//         {
-//             Array array = (Array)o;
-//             ArrayStart arrayStart = WriteArrayStart(TypeMarshalling.GetTypeAlignment(elementType));
-//             foreach (var item in array)
-//             {
-//                 Write(item, asVariant: elementType == typeof(object));
-//             }
-//             WriteArrayEnd(ref arrayStart);
-//         }
-//     }
+    public void WriteVariantDictionary<T>(IEnumerable<T> value)
+        where T : notnull
+    {
+        WriteArraySignature<T>(ref this);
+        WriteArray(value);
+    }
 
+    public void WriteVariantDictionary<T>(T[] value)
+        where T : notnull
+    {
+        WriteArraySignature<T>(ref this);
+        WriteArray(value);
+    }
 
-    // public void WriteArray<T>(ICollection<T> elements)
-    // {
-    //     var writer = GeneratedWriters.Instance.GetWriter<T>();
-    //     ArrayStart start = WriteArrayStart(writer.Alignment);
+    sealed class ArrayTypeWriter<T> : ITypeWriter<IEnumerable<T>>
+        where T : notnull
+    {
+        public void Write(ref MessageWriter writer, IEnumerable<T> value)
+        {
+            writer.WriteArray(value);
+        }
 
-    //     foreach (var element in elements)
-    //     {
-    //         writer.Write(ref this, element);
-    //     }
+        public void WriteVariant(ref MessageWriter writer, object value)
+        {
+            WriteArraySignature<T>(ref writer);
+            writer.WriteArray((IEnumerable<T>)value);
+        }
+    }
 
-    //     WriteArrayEnd(ref start);
-    // }
-// }
+    public static void AddArrayTypeWriter<T>()
+        where T : notnull
+    {
+        lock (_typeWriters)
+        {
+            Type keyType = typeof(IEnumerable<T>);
+            if (!_typeWriters.ContainsKey(keyType))
+            {
+                _typeWriters.Add(keyType, new ArrayTypeWriter<T>());
+            }
+        }
+    }
+
+    private ITypeWriter CreateArrayTypeWriter(Type elementType)
+    {
+        Type writerType = typeof(ArrayTypeWriter<>).MakeGenericType(new[] { elementType });
+        return (ITypeWriter)Activator.CreateInstance(writerType)!;
+    }
+
+    private static void WriteArraySignature<T>(ref MessageWriter writer)
+    {
+        writer.WriteSignature(TypeModel.GetSignature<T[]>());
+    }
+}
