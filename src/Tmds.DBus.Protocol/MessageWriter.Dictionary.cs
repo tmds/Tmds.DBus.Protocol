@@ -97,17 +97,16 @@ public ref partial struct MessageWriter
         }
     }
 
-    // AOT: ensure dictionary type can be written as a nested type or object-variant.
     public static void AddDictionaryTypeWriter<TKey, TValue>()
         where TKey : notnull
         where TValue : notnull
     {
         lock (_typeWriters)
         {
-            Type dictInterfaceType = typeof(IEnumerable<KeyValuePair<TKey, TValue>>);
-            if (!_typeWriters.ContainsKey(dictInterfaceType))
+            Type keyType = typeof(IEnumerable<KeyValuePair<TKey, TValue>>);
+            if (!_typeWriters.ContainsKey(keyType))
             {
-                _typeWriters.Add(dictInterfaceType, new DictionaryTypeWriter<TKey, TValue>());
+                _typeWriters.Add(keyType, new DictionaryTypeWriter<TKey, TValue>());
             }
         }
     }

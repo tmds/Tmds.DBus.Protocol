@@ -62,7 +62,7 @@ public ref partial struct MessageWriter
     {
         ArrayStart start = WriteHeaderStart(MessageType.MethodReturn, MessageFlags.None);
 
-       // ReplySerial
+        // ReplySerial
         WriteStructureStart();
         WriteByte((byte)MessageHeader.ReplySerial);
         WriteVariantUInt32(replySerial);
@@ -94,7 +94,7 @@ public ref partial struct MessageWriter
     {
         ArrayStart start = WriteHeaderStart(MessageType.Error, MessageFlags.None);
 
-       // ReplySerial
+        // ReplySerial
         WriteStructureStart();
         WriteByte((byte)MessageHeader.ReplySerial);
         WriteVariantUInt32(replySerial);

@@ -224,9 +224,9 @@ static class SocketExtensions
         public fixed int fds[64];
     }
 
-    [DllImport ("libc", SetLastError=true)]
+    [DllImport("libc", SetLastError = true)]
     public static extern SSizeT sendmsg(int sockfd, IntPtr msg, int flags);
 
-    [DllImport ("libc", SetLastError=true)]
+    [DllImport("libc", SetLastError = true)]
     public static extern SSizeT recvmsg(int sockfd, IntPtr msg, int flags);
 }

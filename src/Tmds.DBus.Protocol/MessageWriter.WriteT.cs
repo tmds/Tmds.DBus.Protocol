@@ -110,47 +110,80 @@ public ref partial struct MessageWriter
 
     private ITypeWriter CreateWriterForType(Type type)
     {
-
-        // else if (type.IsAssignableTo(typeof(SafeHandle)))
-        // {
-        //     WriteHandle((SafeHandle)(object)value);
-        //     return;
-        // }
-        // if (type.IsArray)
-        // {
-        //     var rank = type.GetArrayRank();
-        //     if (rank == 1)
-        //     {
-        //         WriteArrayTyped(type.GetElementType()!, (object)value!);
-        //         return;
-        //     }
-        // }
-        // else if (type.IsGenericType && type.FullName!.StartsWith("System.ValueTuple"))
-        // {
-        //     switch (type.GenericTypeArguments.Length)
-        //     {
-        //         case 1:
-        //             WriteValueTuple1Typed(type.GenericTypeArguments[0], (object)value);
-        //             return;
-        //         case 2:
-        //             WriteValueTuple2Typed(type.GenericTypeArguments[0], type.GenericTypeArguments[1], (object)value);
-        //             return;
-        //     }
-        // }
-        // else
+        // Struct (ValueTuple)
+        if (type.IsGenericType && type.FullName!.StartsWith("System.ValueTuple"))
         {
-            Type? extractedType = TypeModel.ExtractGenericInterface(type, typeof(IDictionary<,>));
-            if (extractedType != null)
+            switch (type.GenericTypeArguments.Length)
             {
-                if (_typeWriters.TryGetValue(extractedType, out ITypeWriter? writer))
-                {
-                    return writer;
-                }
-                Type keyType = extractedType.GenericTypeArguments[0];
-                Type valueType = extractedType.GenericTypeArguments[1];
-                return CreateDictionaryTypeWriter(keyType, valueType);
+                case 1: return CreateValueTupleTypeWriter(type.GenericTypeArguments[0]);
+                case 2: return CreateValueTupleTypeWriter(type.GenericTypeArguments[0],
+                                                          type.GenericTypeArguments[1]);
+                case 3: return CreateValueTupleTypeWriter(type.GenericTypeArguments[0],
+                                                          type.GenericTypeArguments[1],
+                                                          type.GenericTypeArguments[2]);
+                case 4: return CreateValueTupleTypeWriter(type.GenericTypeArguments[0],
+                                                          type.GenericTypeArguments[1],
+                                                          type.GenericTypeArguments[2],
+                                                          type.GenericTypeArguments[3]);
+                case 5: return CreateValueTupleTypeWriter(type.GenericTypeArguments[0],
+                                                          type.GenericTypeArguments[1],
+                                                          type.GenericTypeArguments[2],
+                                                          type.GenericTypeArguments[3],
+                                                          type.GenericTypeArguments[4]);
             }
         }
+        // Struct (ValueTuple)
+        if (type.IsGenericType && type.FullName!.StartsWith("System.Tuple"))
+        {
+            switch (type.GenericTypeArguments.Length)
+            {
+                case 1: return CreateTupleTypeWriter(type.GenericTypeArguments[0]);
+                case 2: return CreateTupleTypeWriter(type.GenericTypeArguments[0],
+                                                     type.GenericTypeArguments[1]);
+                case 3: return CreateTupleTypeWriter(type.GenericTypeArguments[0],
+                                                     type.GenericTypeArguments[1],
+                                                     type.GenericTypeArguments[2]);
+                case 4: return CreateTupleTypeWriter(type.GenericTypeArguments[0],
+                                                     type.GenericTypeArguments[1],
+                                                     type.GenericTypeArguments[2],
+                                                     type.GenericTypeArguments[3]);
+                case 5: return CreateTupleTypeWriter(type.GenericTypeArguments[0],
+                                                     type.GenericTypeArguments[1],
+                                                     type.GenericTypeArguments[2],
+                                                     type.GenericTypeArguments[3],
+                                                     type.GenericTypeArguments[4]);
+            }
+        }
+
+        // Array/Dictionary type (IEnumerable<>/IEnumerable<KeyValuePair<,>>)
+        Type? extractedType = TypeModel.ExtractGenericInterface(type, typeof(IEnumerable<>));
+        if (extractedType != null)
+        {
+            if (_typeWriters.TryGetValue(extractedType, out ITypeWriter? writer))
+            {
+                return writer;
+            }
+
+            Type elementType = extractedType.GenericTypeArguments[0];
+            if (elementType.IsGenericType && elementType.GetGenericTypeDefinition() == typeof(KeyValuePair<,>))
+            {
+                Type keyType = elementType.GenericTypeArguments[0];
+                Type valueType = elementType.GenericTypeArguments[1];
+                writer = CreateDictionaryTypeWriter(keyType, valueType);
+            }
+            else
+            {
+                writer = CreateArrayTypeWriter(elementType);
+            }
+
+            if (type != extractedType)
+            {
+                _typeWriters.Add(extractedType, writer);
+            }
+
+            return writer;
+        }
+
         ThrowNotSupportedType(type);
         return default!;
     }
