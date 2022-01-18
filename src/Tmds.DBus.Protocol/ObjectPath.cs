@@ -5,5 +5,5 @@ struct ObjectPath
 
     public ObjectPath(string value) => _value = value;
 
-    public override string ToString() => _value;
+    public override string ToString() => _value ?? "";
 }
