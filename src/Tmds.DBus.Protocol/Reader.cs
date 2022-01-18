@@ -88,7 +88,7 @@ public ref struct Reader
     public T[] ReadArray<T>()
     {
         List<T> items = new();
-        ArrayEnd headersEnd = ReadArrayStart(TypeMarshalling.GetTypeAlignment<T>());
+        ArrayEnd headersEnd = ReadArrayStart(TypeModel.GetTypeAlignment<T>());
         while (HasNext(headersEnd))
         {
             items.Add(Read<T>());
@@ -109,7 +109,7 @@ public ref struct Reader
         return dlg.Invoke(ref this);
     }
 
-    public Dictionary<TKey, TValue> ReadDictionary<TKey, TValue>()
+    public Dictionary<TKey, TValue> ReadDictionary<TKey, TValue>() where TKey : notnull
     {
         Dictionary<TKey, TValue> dictionary = new();
         ArrayEnd headersEnd = ReadArrayStart(DBusType.Struct);
@@ -219,7 +219,7 @@ public ref struct Reader
         if (type == typeof(object))
         {
             Utf8Span signature = ReadSignature();
-            type = TypeMarshalling.DetermineVariantType(signature);
+            type = TypeModel.DetermineVariantType(signature);
         }
 
         if (type == typeof(byte))
@@ -298,7 +298,7 @@ public ref struct Reader
             }
             else
             {
-                Type? extractedType = TypeMarshalling.ExtractGenericInterface(type, typeof(IDictionary<,>));
+                Type? extractedType = TypeModel.ExtractGenericInterface(type, typeof(IDictionary<,>));
                 if (extractedType != null)
                 {
                     return (T)ReadDictionaryTyped(extractedType.GenericTypeArguments[0], extractedType.GenericTypeArguments[1]);

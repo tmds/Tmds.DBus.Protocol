@@ -1,6 +1,6 @@
 namespace Tmds.DBus.Protocol;
 
-static class TypeMarshalling
+static class TypeModel
 {
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static DBusType GetTypeAlignment<T>()
@@ -45,7 +45,7 @@ static class TypeMarshalling
         {
             return DBusType.Double;
         }
-        else if (typeof(T) == typeof(String))
+        else if (typeof(T) == typeof(string))
         {
             return DBusType.String;
         }
@@ -192,6 +192,126 @@ static class TypeMarshalling
         else
         {
             return GetGenericInstantiation(baseType, interfaceType);
+        }
+    }
+
+    public static int AppendTypeSignature(Type type, Span<byte> signature)
+    {
+        Type? extractedType;
+        if (type == typeof(object))
+        {
+            signature[0] = (byte)DBusType.Variant;
+            return 1;
+        }
+        else if (type == typeof(byte))
+        {
+            signature[0] = (byte)DBusType.Byte;
+            return 1;
+        }
+        else if (type == typeof(bool))
+        {
+            signature[0] = (byte)DBusType.Bool;
+            return 1;
+        }
+        else if (type == typeof(Int16))
+        {
+            signature[0] = (byte)DBusType.Int16;
+            return 1;
+        }
+        else if (type == typeof(UInt16))
+        {
+            signature[0] = (byte)DBusType.UInt16;
+            return 1;
+        }
+        else if (type == typeof(Int32))
+        {
+            signature[0] = (byte)DBusType.Int32;
+            return 1;
+        }
+        else if (type == typeof(UInt32))
+        {
+            signature[0] = (byte)DBusType.UInt32;
+            return 1;
+        }
+        else if (type == typeof(Int64))
+        {
+            signature[0] = (byte)DBusType.Int64;
+            return 1;
+        }
+        else if (type == typeof(UInt64))
+        {
+            signature[0] = (byte)DBusType.UInt64;
+            return 1;
+        }
+        else if (type == typeof(Double))
+        {
+            signature[0] = (byte)DBusType.Double;
+            return 1;
+        }
+        else if (type == typeof(string))
+        {
+            signature[0] = (byte)DBusType.String;
+            return 1;
+        }
+        else if (type == typeof(ObjectPath))
+        {
+            signature[0] = (byte)DBusType.ObjectPath;
+            return 1;
+        }
+        else if (type == typeof(Signature))
+        {
+            signature[0] = (byte)DBusType.Signature;
+            return 1;
+        }
+        else if (type.IsArray)
+        {
+            int bytesWritten = 0;
+            signature[bytesWritten++] = (byte)DBusType.Array;
+            bytesWritten += AppendTypeSignature(type.GetElementType()!, signature.Slice(bytesWritten));
+            return bytesWritten;
+        }
+        else if (type.FullName!.StartsWith("System.ValueTuple"))
+        {
+            int bytesWritten = 0;
+            signature[bytesWritten++] = (byte)'(';
+            foreach (var itemType in type.GenericTypeArguments)
+            {
+                bytesWritten += AppendTypeSignature(itemType, signature.Slice(bytesWritten));
+            }
+            signature[bytesWritten++] = (byte)')';
+            return bytesWritten;
+        }
+        else if ((extractedType = TypeModel.ExtractGenericInterface(type, typeof(IDictionary<,>))) != null)
+        {
+            int bytesWritten = 0;
+            signature[bytesWritten++] = (byte)'a';
+            signature[bytesWritten++] = (byte)'{';
+            bytesWritten += AppendTypeSignature(extractedType.GenericTypeArguments[0], signature.Slice(bytesWritten));
+            bytesWritten += AppendTypeSignature(extractedType.GenericTypeArguments[1], signature.Slice(bytesWritten));
+            signature[bytesWritten++] = (byte)'}';
+            return bytesWritten;
+        }
+        else if (type.IsAssignableTo(typeof(SafeHandle)))
+        {
+            signature[0] = (byte)DBusType.UnixFd;
+            return 1;
+        }
+        return 0;
+    }
+
+    public static ReadOnlySpan<byte> GetSignature<T>() => SignatureCache<T>.Signature;
+
+    static class SignatureCache<T>
+    {
+        private static readonly byte[] s_signature = GetSignature(typeof(T));
+
+        public static ReadOnlySpan<byte> Signature => s_signature;
+
+        private static byte[] GetSignature(Type type)
+        {
+            Span<byte> buffer = stackalloc byte[256];
+            int bytesWritten = TypeModel.AppendTypeSignature(type, buffer);
+            return buffer.Slice(0, bytesWritten).ToArray();
         }
     }
 }
