@@ -12,4 +12,14 @@
     <PackageReference Include="System.IO.Pipelines" Version="6.0.1" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Using Include="System.Buffers"/>
+    <Using Include="System.Buffers.Binary"/>
+    <Using Include="System.Diagnostics"/>
+    <Using Include="Nerdbank.Streams"/>
+    <Using Include="System.Runtime.CompilerServices"/>
+    <Using Include="System.Runtime.InteropServices"/>
+    <Using Include="System.Text"/>
+  </ItemGroup>
+
 </Project>
