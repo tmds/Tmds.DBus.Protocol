@@ -6,13 +6,13 @@ public ref partial struct Reader
 {
     public ValueTuple<T1> ReadStruct<T1>()
     {
-        AlignReader(DBusType.Struct);
+        AlignStruct();
         return ValueTuple.Create(Read<T1>());
     }
 
     private Tuple<T1> ReadStructAsTuple<T1>()
     {
-        AlignReader(DBusType.Struct);
+        AlignStruct();
         return Tuple.Create(Read<T1>());
     }
 
@@ -76,7 +76,7 @@ public ref partial struct Reader
         where T1 : notnull
         where T2 : notnull
     {
-        AlignReader(DBusType.Struct);
+        AlignStruct();
         return ValueTuple.Create(Read<T1>(), Read<T2>());
     }
 
@@ -84,7 +84,7 @@ public ref partial struct Reader
         where T1 : notnull
         where T2 : notnull
     {
-        AlignReader(DBusType.Struct);
+        AlignStruct();
         return Tuple.Create(Read<T1>(), Read<T2>());
     }
 
@@ -153,13 +153,13 @@ public ref partial struct Reader
         where T2 : notnull
         where T3 : notnull
     {
-        AlignReader(DBusType.Struct);
+        AlignStruct();
         return ValueTuple.Create(Read<T1>(), Read<T2>(), Read<T3>());
     }
 
     private Tuple<T1, T2, T3> ReadStructAsTuple<T1, T2, T3>()
     {
-        AlignReader(DBusType.Struct);
+        AlignStruct();
         return Tuple.Create(Read<T1>(), Read<T2>(), Read<T3>());
     }
 
@@ -233,7 +233,7 @@ public ref partial struct Reader
         where T3 : notnull
         where T4 : notnull
     {
-        AlignReader(DBusType.Struct);
+        AlignStruct();
         return ValueTuple.Create(Read<T1>(), Read<T2>(), Read<T3>(), Read<T4>());
     }
 
@@ -243,7 +243,7 @@ public ref partial struct Reader
         where T3 : notnull
         where T4 : notnull
     {
-        AlignReader(DBusType.Struct);
+        AlignStruct();
         return Tuple.Create(Read<T1>(), Read<T2>(), Read<T3>(), Read<T4>());
     }
 
@@ -317,13 +317,13 @@ public ref partial struct Reader
 
     public ValueTuple<T1, T2, T3, T4, T5> ReadStruct<T1, T2, T3, T4, T5>()
     {
-        AlignReader(DBusType.Struct);
+        AlignStruct();
         return ValueTuple.Create(Read<T1>(), Read<T2>(), Read<T3>(), Read<T4>(), Read<T5>());
     }
 
     private Tuple<T1, T2, T3, T4, T5> ReadStructAsTuple<T1, T2, T3, T4, T5>()
     {
-        AlignReader(DBusType.Struct);
+        AlignStruct();
         return Tuple.Create(Read<T1>(), Read<T2>(), Read<T3>(), Read<T4>(), Read<T5>());
     }
 

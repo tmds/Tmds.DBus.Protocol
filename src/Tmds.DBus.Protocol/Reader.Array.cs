@@ -21,7 +21,6 @@ public ref partial struct Reader
         ArrayEnd headersEnd = ReadArrayStart(DBusType.Struct);
         while (HasNext(headersEnd))
         {
-            AlignReader(DBusType.Struct);
             TKey key = Read<TKey>();
             TValue value = Read<TValue>();
             items.Add(new KeyValuePair<TKey, TValue>(key, value));

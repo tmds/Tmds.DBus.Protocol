@@ -116,20 +116,24 @@ public ref partial struct MessageWriter
             switch (type.GenericTypeArguments.Length)
             {
                 case 1: return CreateValueTupleTypeWriter(type.GenericTypeArguments[0]);
-                case 2: return CreateValueTupleTypeWriter(type.GenericTypeArguments[0],
-                                                          type.GenericTypeArguments[1]);
-                case 3: return CreateValueTupleTypeWriter(type.GenericTypeArguments[0],
-                                                          type.GenericTypeArguments[1],
-                                                          type.GenericTypeArguments[2]);
-                case 4: return CreateValueTupleTypeWriter(type.GenericTypeArguments[0],
-                                                          type.GenericTypeArguments[1],
-                                                          type.GenericTypeArguments[2],
-                                                          type.GenericTypeArguments[3]);
-                case 5: return CreateValueTupleTypeWriter(type.GenericTypeArguments[0],
-                                                          type.GenericTypeArguments[1],
-                                                          type.GenericTypeArguments[2],
-                                                          type.GenericTypeArguments[3],
-                                                          type.GenericTypeArguments[4]);
+                case 2:
+                    return CreateValueTupleTypeWriter(type.GenericTypeArguments[0],
+                                                      type.GenericTypeArguments[1]);
+                case 3:
+                    return CreateValueTupleTypeWriter(type.GenericTypeArguments[0],
+                                                      type.GenericTypeArguments[1],
+                                                      type.GenericTypeArguments[2]);
+                case 4:
+                    return CreateValueTupleTypeWriter(type.GenericTypeArguments[0],
+                                                      type.GenericTypeArguments[1],
+                                                      type.GenericTypeArguments[2],
+                                                      type.GenericTypeArguments[3]);
+                case 5:
+                    return CreateValueTupleTypeWriter(type.GenericTypeArguments[0],
+                                                      type.GenericTypeArguments[1],
+                                                      type.GenericTypeArguments[2],
+                                                      type.GenericTypeArguments[3],
+                                                      type.GenericTypeArguments[4]);
             }
         }
         // Struct (ValueTuple)
@@ -138,20 +142,24 @@ public ref partial struct MessageWriter
             switch (type.GenericTypeArguments.Length)
             {
                 case 1: return CreateTupleTypeWriter(type.GenericTypeArguments[0]);
-                case 2: return CreateTupleTypeWriter(type.GenericTypeArguments[0],
-                                                     type.GenericTypeArguments[1]);
-                case 3: return CreateTupleTypeWriter(type.GenericTypeArguments[0],
-                                                     type.GenericTypeArguments[1],
-                                                     type.GenericTypeArguments[2]);
-                case 4: return CreateTupleTypeWriter(type.GenericTypeArguments[0],
-                                                     type.GenericTypeArguments[1],
-                                                     type.GenericTypeArguments[2],
-                                                     type.GenericTypeArguments[3]);
-                case 5: return CreateTupleTypeWriter(type.GenericTypeArguments[0],
-                                                     type.GenericTypeArguments[1],
-                                                     type.GenericTypeArguments[2],
-                                                     type.GenericTypeArguments[3],
-                                                     type.GenericTypeArguments[4]);
+                case 2:
+                    return CreateTupleTypeWriter(type.GenericTypeArguments[0],
+                                                 type.GenericTypeArguments[1]);
+                case 3:
+                    return CreateTupleTypeWriter(type.GenericTypeArguments[0],
+                                                 type.GenericTypeArguments[1],
+                                                 type.GenericTypeArguments[2]);
+                case 4:
+                    return CreateTupleTypeWriter(type.GenericTypeArguments[0],
+                                                 type.GenericTypeArguments[1],
+                                                 type.GenericTypeArguments[2],
+                                                 type.GenericTypeArguments[3]);
+                case 5:
+                    return CreateTupleTypeWriter(type.GenericTypeArguments[0],
+                                                 type.GenericTypeArguments[1],
+                                                 type.GenericTypeArguments[2],
+                                                 type.GenericTypeArguments[3],
+                                                 type.GenericTypeArguments[4]);
             }
         }
 

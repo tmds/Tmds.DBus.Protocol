@@ -12,7 +12,6 @@ public ref partial struct Reader
         ArrayEnd headersEnd = ReadArrayStart(DBusType.Struct);
         while (HasNext(headersEnd))
         {
-            AlignReader(DBusType.Struct);
             var key = Read<TKey>();
             var value = Read<TValue>();
             dictionary.Add(key, value);

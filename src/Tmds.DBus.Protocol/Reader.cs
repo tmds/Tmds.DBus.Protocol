@@ -22,7 +22,9 @@ public ref partial struct Reader
         _handles = handles;
     }
 
-    public void AlignReader(DBusType type)
+    public void AlignStruct() => AlignReader(DBusType.Struct);
+
+    private void AlignReader(DBusType type)
     {
         long pad = ProtocolConstants.GetPadding((int)_reader.Consumed, type);
         if (pad != 0)

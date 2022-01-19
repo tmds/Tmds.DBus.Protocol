@@ -198,7 +198,7 @@ class DBusConnection : IDisposable
                 {
                     tcsState.SetException(exception);
                 }
-                else if (message.Type == MessageType.MethodReturn)
+                else if (message.MessageType == MessageType.MethodReturn)
                 {
                     tcsState.SetResult(message.GetBodyReader().ReadString().ToString());
                 }
@@ -235,7 +235,7 @@ class DBusConnection : IDisposable
             MessageHandler pendingCall = default;
             IMethodHandler? messageHandler = null;
 
-            bool isMethodCall = message.Type == MessageType.MethodCall;
+            bool isMethodCall = message.MessageType == MessageType.MethodCall;
 
             lock (_gate)
             {
@@ -291,7 +291,7 @@ class DBusConnection : IDisposable
 
         void SendUnknownMethodError(in Message methodCall)
         {
-            if ((methodCall.Flags & MessageFlags.NoReplyExpected) != 0)
+            if ((methodCall.MessageFlags & MessageFlags.NoReplyExpected) != 0)
             {
                 return;
             }
@@ -420,11 +420,11 @@ class DBusConnection : IDisposable
             {
                 tcsState.SetException(exception);
             }
-            else if (message.Type == MessageType.MethodReturn)
+            else if (message.MessageType == MessageType.MethodReturn)
             {
                 tcsState.SetResult(valueReaderState(in message, state3));
             }
-            else if (message.Type == MessageType.Error)
+            else if (message.MessageType == MessageType.Error)
             {
                 string errorName = message.ErrorName.ToString();
                 string errMessage = errorName;
@@ -436,7 +436,7 @@ class DBusConnection : IDisposable
             }
             else
             {
-                tcsState.SetException(new ProtocolException($"Unexpected reply type: {message.Type}."));
+                tcsState.SetException(new ProtocolException($"Unexpected reply type: {message.MessageType}."));
             }
         };
 
@@ -466,11 +466,11 @@ class DBusConnection : IDisposable
         {
             tcsState.SetException(exception);
         }
-        else if (message.Type == MessageType.MethodReturn)
+        else if (message.MessageType == MessageType.MethodReturn)
         {
             tcsState.SetResult();
         }
-        else if (message.Type == MessageType.Error)
+        else if (message.MessageType == MessageType.Error)
         {
             string errorName = message.ErrorName.ToString();
             string errMessage = errorName;
@@ -482,7 +482,7 @@ class DBusConnection : IDisposable
         }
         else
         {
-            tcsState.SetException(new ProtocolException($"Unexpected reply type: {message.Type}."));
+            tcsState.SetException(new ProtocolException($"Unexpected reply type: {message.MessageType}."));
         }
     }
 
@@ -547,7 +547,7 @@ class DBusConnection : IDisposable
                 MessageHandlerDelegate fn = static (Exception? exception, in Message message, object? state1, object? state2, object? state3) =>
                 {
                     var mm = (MatchMaker)state1!;
-                    if (message.Type == MessageType.MethodReturn)
+                    if (message.MessageType == MessageType.MethodReturn)
                     {
                         mm.HasSubscribed = true;
                     }
@@ -745,9 +745,9 @@ class DBusConnection : IDisposable
             Connection = connection;
             _rule = rule;
 
-            _type = data.Type;
+            _type = data.MessageType;
 
-            if (data.Sender is not null)
+            if (data.Sender is not null && data.Sender.StartsWith(':'))
             {
                 _sender = Encoding.UTF8.GetBytes(data.Sender);
             }
@@ -810,7 +810,7 @@ class DBusConnection : IDisposable
 
         internal bool Matches(in Message message) // TODO: 'in' arg
         {
-            if (_type.HasValue && _type != message.Type)
+            if (_type.HasValue && _type != message.MessageType)
             {
                 return false;
             }

@@ -1,6 +1,6 @@
 namespace Tmds.DBus.Protocol;
 
-public interface IMessageStream
+interface IMessageStream
 {
     public delegate void MessageReceivedHandler<T>(Exception? closeReason, in Message message, T state);
 
