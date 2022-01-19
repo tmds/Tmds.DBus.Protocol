@@ -51,7 +51,7 @@ sealed class NetworkManager : DBusObject
 
         MessageBuffer CreateMessage()
         {
-            var writer = Connection.GetMessageWriter();
+            using var writer = Connection.GetMessageWriter();
 
             writer.WriteMethodCallHeader(
                 destination: Peer,

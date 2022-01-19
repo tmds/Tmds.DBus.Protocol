@@ -59,7 +59,7 @@ class AddProxy
 
         MessageBuffer CreateAddMessage()
         {
-            var writer = _connection.GetMessageWriter();
+            using var writer = _connection.GetMessageWriter();
 
             writer.WriteMethodCallHeader(
                 destination: _peer,
@@ -108,7 +108,7 @@ class AddImplementation : IMethodHandler
 
         static MessageBuffer CreateResponseMessage(Connection connection, in Message message, int sum)
         {
-            var writer = connection.GetMessageWriter();
+            using var writer = connection.GetMessageWriter();
 
             writer.WriteMethodReturnHeader(
                 replySerial: message.Serial,

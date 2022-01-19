@@ -141,6 +141,13 @@ public ref partial struct MessageWriter
             _span = default;
         }
     }
+
+    public void Dispose()
+    {
+        // TODO:
+        // _message must be set to null in CreateMessage.
+        // return _message to pool if not null.
+    }
 }
 
 public ref struct ArrayStart

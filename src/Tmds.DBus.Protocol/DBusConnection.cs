@@ -1,6 +1,7 @@
-using System;
 using System.Net;
 using System.Net.Sockets;
+
+#pragma warning disable VSTHRD100 // Avoid "async void" methods
 
 namespace Tmds.DBus.Protocol;
 
@@ -212,7 +213,7 @@ class DBusConnection : IDisposable
 
         MessageBuffer CreateHelloMessage()
         {
-            MessageWriter writer = GetMessageWriter();
+            using var writer = GetMessageWriter();
 
             writer.WriteMethodCallHeader(
                 destination: "org.freedesktop.DBus",
@@ -585,7 +586,7 @@ class DBusConnection : IDisposable
 
         MessageBuffer CreateAddMatchMessage(string ruleString)
         {
-            MessageWriter writer = GetMessageWriter();
+            using var writer = GetMessageWriter();
 
             writer.WriteMethodCallHeader(
                 destination: "org.freedesktop.DBus",
@@ -702,7 +703,7 @@ class DBusConnection : IDisposable
 
         MessageBuffer CreateRemoveMatchMessage()
         {
-            MessageWriter writer = GetMessageWriter();
+            using var writer = GetMessageWriter();
 
             writer.WriteMethodCallHeader(
                 destination: "org.freedesktop.DBus",
@@ -932,7 +933,7 @@ class DBusConnection : IDisposable
 
         MessageBuffer CreateErrorMessage(Message methodCall, string errorName, string errorMsg)
         {
-            MessageWriter writer = GetMessageWriter();
+            using var writer = GetMessageWriter();
 
             writer.WriteError(
                 replySerial: methodCall.Serial,
