@@ -5,6 +5,7 @@ static class TypeModel
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static DBusType GetTypeAlignment<T>()
     {
+        // TODO: add caching.
         if (typeof(T) == typeof(object))
         {
             return DBusType.Variant;
@@ -84,6 +85,7 @@ static class TypeModel
 
     public static Type DetermineVariantType(Utf8Span signature)
     {
+        // TODO: add caching.
         switch ((DBusType)signature.Span[0])
         {
             case DBusType.Byte:
@@ -134,19 +136,15 @@ static class TypeModel
                 switch (typeCount)
                 {
                     case 1:
-                        return typeof(Tuple<>).MakeGenericType(types);
+                        return typeof(ValueTuple<>).MakeGenericType(types);
                     case 2:
-                        return typeof(Tuple<,>).MakeGenericType(types);
+                        return typeof(ValueTuple<,>).MakeGenericType(types);
                     case 3:
-                        return typeof(Tuple<,,>).MakeGenericType(types);
+                        return typeof(ValueTuple<,,>).MakeGenericType(types);
                     case 4:
-                        return typeof(Tuple<,,,>).MakeGenericType(types);
+                        return typeof(ValueTuple<,,,>).MakeGenericType(types);
                     case 5:
-                        return typeof(Tuple<,,,,>).MakeGenericType(types);
-                    case 6:
-                        return typeof(Tuple<,,,,,>).MakeGenericType(types);
-                    case 7:
-                        return typeof(Tuple<,,,,,,>).MakeGenericType(types);
+                        return typeof(ValueTuple<,,,,>).MakeGenericType(types);
                 }
                 break;
         }
@@ -195,7 +193,7 @@ static class TypeModel
         }
     }
 
-    public static int AppendTypeSignature(Type type, Span<byte> signature)
+    private static int AppendTypeSignature(Type type, Span<byte> signature)
     {
         Type? extractedType;
         if (type == typeof(object))

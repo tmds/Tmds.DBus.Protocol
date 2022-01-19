@@ -19,9 +19,4 @@ static class ThrowHelper
     {
         throw new IndexOutOfRangeException();
     }
-
-    public static void ThrowReadingTypeNotSupported(Type type)
-    {
-        throw new NotSupportedException($"Reading type {type.FullName} is not supported.");
-    }
 }

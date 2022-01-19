@@ -200,7 +200,7 @@ class DBusConnection : IDisposable
                 }
                 else if (message.Type == MessageType.MethodReturn)
                 {
-                    tcsState.SetResult(message.GetBodyReader().ReadStringAsString());
+                    tcsState.SetResult(message.GetBodyReader().ReadString().ToString());
                 }
                 else
                 {
@@ -430,7 +430,7 @@ class DBusConnection : IDisposable
                 string errMessage = errorName;
                 if (!message.Signature.IsEmpty && (DBusType)message.Signature.Span[0] == DBusType.String)
                 {
-                    errMessage = message.GetBodyReader().ReadStringAsString();
+                    errMessage = message.GetBodyReader().ReadString().ToString();
                 }
                 tcsState.SetException(new DBusException(errorName, errMessage));
             }
@@ -476,7 +476,7 @@ class DBusConnection : IDisposable
             string errMessage = errorName;
             if (!message.Signature.IsEmpty && (DBusType)message.Signature.Span[0] == DBusType.String)
             {
-                errMessage = message.GetBodyReader().ReadStringAsString();
+                errMessage = message.GetBodyReader().ReadString().ToString();
             }
             tcsState.SetException(new DBusException(errorName, errMessage));
         }
