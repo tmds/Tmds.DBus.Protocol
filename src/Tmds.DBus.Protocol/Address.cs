@@ -186,7 +186,7 @@ public static class Address
         return Encoding.UTF8.GetString(bytes, 0, count);
     }
 
-    public struct Passwd
+    struct Passwd
     {
         public IntPtr Name;
         public IntPtr Password;
@@ -198,23 +198,23 @@ public static class Address
     }
 
     [DllImport("libc")]
-    internal static extern unsafe int getpwuid_r(uint uid, out Passwd pwd, byte* buf, int bufLen, out IntPtr result);
+    private static extern unsafe int getpwuid_r(uint uid, out Passwd pwd, byte* buf, int bufLen, out IntPtr result);
     [DllImport("libc")]
-    internal static extern uint getuid();
+    private static extern uint getuid();
 
     [DllImport("libX11")]
-    internal static extern IntPtr XOpenDisplay(string? name);
+    private static extern IntPtr XOpenDisplay(string? name);
     [DllImport("libX11")]
-    internal static extern int XCloseDisplay(IntPtr display);
+    private static extern int XCloseDisplay(IntPtr display);
     [DllImport("libX11")]
-    internal static extern IntPtr XInternAtom(IntPtr display, string atom_name, bool only_if_exists);
+    private static extern IntPtr XInternAtom(IntPtr display, string atom_name, bool only_if_exists);
     [DllImport("libX11")]
-    internal static extern int XGetWindowProperty(IntPtr display, IntPtr w, IntPtr property,
+    private static extern int XGetWindowProperty(IntPtr display, IntPtr w, IntPtr property,
         int long_offset, int long_length, bool delete, IntPtr req_type,
         out IntPtr actual_type_return, out IntPtr actual_format_return,
         out IntPtr nitems_return, out IntPtr bytes_after_return, out IntPtr prop_return);
     [DllImport("libX11")]
-    internal static extern int XFree(IntPtr data);
+    private static extern int XFree(IntPtr data);
     [DllImport("libX11")]
-    internal static extern IntPtr XGetSelectionOwner(IntPtr display, IntPtr Atom);
+    private static extern IntPtr XGetSelectionOwner(IntPtr display, IntPtr Atom);
 }

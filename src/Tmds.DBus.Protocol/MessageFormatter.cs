@@ -1,11 +1,11 @@
 namespace Tmds.DBus.Protocol;
 
-public class MessageFormatter
+class MessageFormatter
 {
     public static void FormatMessage(in Message msg, StringBuilder sb)
     {
         // Header.
-        Append(sb, msg.Type);
+        Append(sb, msg.MessageType);
         sb.Append(" serial=");
         sb.Append(msg.Serial);
         if (msg.ReplySerial.HasValue)
@@ -20,10 +20,10 @@ public class MessageFormatter
         Append(sb, " src", msg.Sender);
         Append(sb, " dst", msg.Destination);
         Append(sb, " ifac", msg.Interface);
-        if (msg.UnixFds != 0)
+        if (msg.UnixFdCount != 0)
         {
             sb.Append(" fds=");
-            sb.Append(msg.UnixFds);
+            sb.Append(msg.UnixFdCount);
         }
 
         sb.AppendLine();

@@ -1,6 +1,6 @@
 namespace Tmds.DBus.Protocol;
 
-public sealed class UnixFdCollection : List<(IntPtr, bool)>, IDisposable
+sealed class UnixFdCollection : List<(IntPtr, bool)>, IDisposable
 {
     public void Dispose()
     {

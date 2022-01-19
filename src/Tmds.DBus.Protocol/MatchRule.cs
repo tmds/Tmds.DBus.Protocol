@@ -2,7 +2,7 @@ namespace Tmds.DBus.Protocol;
 
 struct MatchRuleData
 {
-    public MessageType? Type { get; set; }
+    public MessageType? MessageType { get; set; }
 
     public string? Sender { get; set; }
 
@@ -26,14 +26,14 @@ struct MatchRuleData
     {
         var sb = new StringBuilder(); // TODO: pool
 
-        if (Type.HasValue)
+        if (MessageType.HasValue)
         {
-            string? typeMatch = Type switch
+            string? typeMatch = MessageType switch
             {
-                MessageType.MethodCall => "type=method_call",
-                MessageType.MethodReturn => "type=method_return",
-                MessageType.Error => "type=error",
-                MessageType.Signal => "type=signal",
+                Protocol.MessageType.MethodCall => "type=method_call",
+                Protocol.MessageType.MethodReturn => "type=method_return",
+                Protocol.MessageType.Error => "type=error",
+                Protocol.MessageType.Signal => "type=signal",
                 _ => null
             };
 
@@ -105,7 +105,7 @@ public sealed class MatchRule
 
     internal MatchRuleData Data => _data;
 
-    public MessageType? Type { get => _data.Type; set => _data.Type = value; }
+    public MessageType? Type { get => _data.MessageType; set => _data.MessageType = value; }
     public string? Sender { get => _data.Sender; set => _data.Sender = value; }
     public string? Interface { get => _data.Interface; set => _data.Interface = value; }
     public string? Member { get => _data.Member; set => _data.Member = value; }

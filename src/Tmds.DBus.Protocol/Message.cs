@@ -8,8 +8,8 @@ public readonly ref struct Message
     private readonly UnixFdCollection? _handles;
     private readonly ReadOnlySequence<byte> _body;
 
-    public MessageType Type { get; }
-    public MessageFlags Flags { get; }
+    public MessageType MessageType { get; }
+    public MessageFlags MessageFlags { get; }
     public uint Serial { get; }
 
     // Header Fields
@@ -21,15 +21,15 @@ public readonly ref struct Message
     public Utf8Span Destination { get; }
     public Utf8Span Sender { get; }
     public Utf8Span Signature { get; }
-    public int UnixFds { get; }
+    public int UnixFdCount { get; }
 
     public Reader GetBodyReader() => new Reader(_isBigEndian, _body, _handles);
 
     private Message(ReadOnlySequence<byte> sequence, bool isBigEndian, MessageType type, MessageFlags flags, uint serial, UnixFdCollection? handles)
     {
         _isBigEndian = isBigEndian;
-        Type = type;
-        Flags = flags;
+        MessageType = type;
+        MessageFlags = flags;
         Serial = serial;
         _handles = handles;
 
@@ -41,7 +41,7 @@ public readonly ref struct Message
         Destination = default;
         Sender = default;
         Signature = default;
-        UnixFds = default;
+        UnixFdCount = default;
 
         var reader = new Reader(isBigEndian, sequence, null);
         reader.Advance(HeaderFieldsLengthOffset);
@@ -78,19 +78,19 @@ public readonly ref struct Message
                     Signature = reader.ReadSignature();
                     break;
                 case MessageHeader.UnixFds:
-                    UnixFds = (int)reader.ReadUInt32();
+                    UnixFdCount = (int)reader.ReadUInt32();
                     // TODO: throw if handles contains less.
                     break;
                 default:
                     throw new NotSupportedException();
             }
         }
-        reader.AlignReader(DBusType.Struct);
+        reader.AlignStruct();
 
         _body = reader.UnreadSequence;
     }
 
-    public static bool TryReadMessage(ref ReadOnlySequence<byte> sequence, out Message message, UnixFdCollection? handles = null)
+    internal static bool TryReadMessage(ref ReadOnlySequence<byte> sequence, out Message message, UnixFdCollection? handles = null)
     {
         message = default;
 
