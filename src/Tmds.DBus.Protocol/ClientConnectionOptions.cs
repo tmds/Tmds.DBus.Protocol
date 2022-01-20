@@ -20,7 +20,7 @@ public class ClientConnectionOptions : ConnectionOptions
 
     protected internal virtual ValueTask<ClientSetupResult> SetupAsync(CancellationToken cancellationToken)
     {
-        return ValueTask.FromResult(
+        return new ValueTask<ClientSetupResult>(
             new ClientSetupResult(_address)
             {
                 SupportsFdPassing = true,

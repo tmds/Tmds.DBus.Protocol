@@ -65,7 +65,7 @@ public class Connection : IDisposable
 
             if (state == ConnectionState.Connected)
             {
-                return ValueTask.FromResult(_connection!);
+                return new ValueTask<DBusConnection>(_connection!);
             }
 
             if (!_connectionOptions.AutoConnect)

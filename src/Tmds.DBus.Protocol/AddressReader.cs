@@ -13,7 +13,7 @@ static class AddressParser
 
         internal ReadOnlySpan<char> AsSpan() => String.AsSpan(Offset, Count);
 
-        public override string ToString() => new string(AsSpan());
+        public override string ToString() => AsSpan().AsString();
     }
 
     public static bool TryGetNextEntry(string addresses, ref AddressEntry address)
@@ -39,7 +39,7 @@ static class AddressParser
     public static bool IsType(AddressEntry address, string type)
     {
         ReadOnlySpan<char> span = address.AsSpan();
-        return span.Length > type.Length && span[type.Length] == ':' && span.StartsWith(type);
+        return span.Length > type.Length && span[type.Length] == ':' && span.StartsWith(type.AsSpan());
     }
 
     public static void ParseTcpProperties(AddressEntry address, out string host, out int? port, out Guid guid)
@@ -50,15 +50,15 @@ static class AddressParser
         ReadOnlySpan<char> properties = GetProperties(address);
         while (TryParseProperty(ref properties, out ReadOnlySpan<char> key, out ReadOnlySpan<char> value))
         {
-            if (key.SequenceEqual("host"))
+            if (key.SequenceEqual("host".AsSpan()))
             {
                 host = Unescape(value);
             }
-            else if (key.SequenceEqual("port"))
+            else if (key.SequenceEqual("port".AsSpan()))
             {
                 port = int.Parse(Unescape(value));
             }
-            else if (key.SequenceEqual("guid"))
+            else if (key.SequenceEqual("guid".AsSpan()))
             {
                 guid = Guid.ParseExact(Unescape(value), "N");
             }
@@ -77,16 +77,16 @@ static class AddressParser
         ReadOnlySpan<char> properties = GetProperties(address);
         while (TryParseProperty(ref properties, out ReadOnlySpan<char> key, out ReadOnlySpan<char> value))
         {
-            if (key.SequenceEqual("path"))
+            if (key.SequenceEqual("path".AsSpan()))
             {
                 path = Unescape(value);
             }
-            else if (key.SequenceEqual("abstract"))
+            else if (key.SequenceEqual("abstract".AsSpan()))
             {
                 isAbstract = true;
                 path = Unescape(value);
             }
-            else if (key.SequenceEqual("guid"))
+            else if (key.SequenceEqual("guid".AsSpan()))
             {
                 guid = Guid.ParseExact(Unescape(value), "N");
             }
@@ -144,9 +144,9 @@ static class AddressParser
 
     private static string Unescape(ReadOnlySpan<char> value)
     {
-        if (!value.Contains('%'))
+        if (!value.Contains("%".AsSpan(), StringComparison.Ordinal))
         {
-            return new string(value);
+            return value.AsString();
         }
         Span<char> unescaped = stackalloc char[Constants.StackAllocCharThreshold];
         int pos = 0;
@@ -172,7 +172,7 @@ static class AddressParser
                 throw new FormatException("Escape sequence is too short.");
             }
         }
-        return new string(unescaped.Slice(0, pos));
+        return unescaped.Slice(0, pos).AsString();
 
         static int FromHexChar(char c)
         {

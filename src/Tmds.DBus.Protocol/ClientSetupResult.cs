@@ -1,13 +1,17 @@
 namespace Tmds.DBus.Protocol;
 
-public record ClientSetupResult(string address)
+public class ClientSetupResult
 {
-    public string ConnectionAddress { get; init; } =
-        address ?? throw new ArgumentNullException(nameof(address));
+    public ClientSetupResult(string address)
+    {
+        ConnectionAddress = address ?? throw new ArgumentNullException(nameof(address));
+    }
 
-    public object? TeardownToken { get; init; }
+    public string ConnectionAddress { get;  }
 
-    public string? UserId { get; init; }
+    public object? TeardownToken { get; set; }
 
-    public bool SupportsFdPassing { get; init; }
+    public string? UserId { get; set; }
+
+    public bool SupportsFdPassing { get; set; }
 }
