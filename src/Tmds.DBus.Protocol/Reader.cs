@@ -10,7 +10,7 @@ public ref partial struct Reader
     private UnixFdCollection? _handles;
     private SequenceReader<byte> _reader;
 
-    internal ReadOnlySequence<byte> UnreadSequence => _reader.UnreadSequence;
+    internal ReadOnlySequence<byte> UnreadSequence => _reader.Sequence.Slice(_reader.Position);
 
     internal void Advance(long count) => _reader.Advance(count);
 

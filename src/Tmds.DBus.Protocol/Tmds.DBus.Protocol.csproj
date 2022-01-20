@@ -1,25 +1,17 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>net6.0</TargetFramework>
-    <ImplicitUsings>enable</ImplicitUsings>
+    <TargetFrameworks>netstandard2.0;netstandard2.1</TargetFrameworks>
     <Nullable>enable</Nullable>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <LangVersion>10</LangVersion>
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Nerdbank.Streams" Version="2.8.54" />
+    <PackageReference Include="Nerdbank.Streams" Version="2.9.45-alpha" />
     <PackageReference Include="System.IO.Pipelines" Version="6.0.1" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <Using Include="System.Buffers"/>
-    <Using Include="System.Buffers.Binary"/>
-    <Using Include="System.Diagnostics"/>
-    <Using Include="Nerdbank.Streams"/>
-    <Using Include="System.Runtime.CompilerServices"/>
-    <Using Include="System.Runtime.InteropServices"/>
-    <Using Include="System.Text"/>
+    <PackageReference Include="System.Threading.Channels" Version="6.0.0" />
+    <PackageReference Include="System.Security.Principal.Windows" Version="5.0.0" />
   </ItemGroup>
 
 </Project>

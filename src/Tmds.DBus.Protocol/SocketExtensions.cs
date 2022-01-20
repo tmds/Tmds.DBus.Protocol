@@ -87,7 +87,7 @@ static class SocketExtensions
                     continue;
                 }
                 // TODO: handle EAGAIN.
-                return ValueTask.FromException(new SocketException(errno));
+                return new ValueTask(Task.FromException(new SocketException(errno)));
             }
         } while (true);
     }
@@ -112,7 +112,7 @@ static class SocketExtensions
             fdm.hdr.cmsg_level = SOL_SOCKET;
             fdm.hdr.cmsg_type = SCM_RIGHTS;
 
-            SafeHandle handle = socket.SafeHandle;
+            SafeHandle handle = socket.GetSafeHandle();
             int handleRefsAdded = 0;
             bool refAdded = false;
             try
@@ -159,7 +159,7 @@ static class SocketExtensions
             msg.msg_control = &cm;
             msg.msg_controllen = (SizeT)sizeof(cmsg_fd);
 
-            var handle = socket.SafeHandle;
+            var handle = socket.GetSafeHandle();
             bool refAdded = false;
             try
             {

@@ -2,7 +2,7 @@ using System.Diagnostics.CodeAnalysis;
 
 static class ThrowHelper
 {
-    public static void ThrowIfDisposed([DoesNotReturnIf(true)] bool condition, object instance)
+    public static void ThrowIfDisposed(bool condition, object instance)
     {
         if (condition)
         {
@@ -18,5 +18,10 @@ static class ThrowHelper
     public static void ThrowIndexOutOfRange()
     {
         throw new IndexOutOfRangeException();
+    }
+
+    public static void ThrowNotSupportedException()
+    {
+        throw new NotSupportedException();
     }
 }

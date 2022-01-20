@@ -176,26 +176,7 @@ class MessageStream : IMessageStream
         AuthenticationResult result;
         if (userId is not null)
         {
-            const string AuthExternal = "AUTH EXTERNAL ";
-            string command = string.Create<string>(
-                length: AuthExternal.Length + userId.Length * 2 + 2, userId,
-                static (Span<char> span, string userId) =>
-                {
-                    AuthExternal.AsSpan().CopyTo(span);
-                    span = span.Slice(AuthExternal.Length);
-
-                    const string hexchars = "0123456789abcdef";
-                    for (int i = 0; i < userId.Length; i++)
-                    {
-                        byte b = (byte)userId[i];
-                        span[i * 2] = hexchars[(int)(b >> 4)];
-                        span[i * 2 + 1] = hexchars[(int)(b & 0xF)];
-                    }
-                    span = span.Slice(userId.Length * 2);
-
-                    span[0] = '\r';
-                    span[1] = '\n';
-                });
+            string command = CreateAuthExternalCommand(userId);
 
             result = await SendAuthCommandAsync(command, supportsFdPassing).ConfigureAwait(false);
 
@@ -212,6 +193,43 @@ class MessageStream : IMessageStream
         }
 
         throw new ConnectException("Authentication failure");
+    }
+
+    private static string CreateAuthExternalCommand(string userId)
+    {
+        const string AuthExternal = "AUTH EXTERNAL ";
+        const string hexchars = "0123456789abcdef";
+#if NETSTANDARD2_0
+        StringBuilder sb = new();
+        sb.Append(AuthExternal);
+        for (int i = 0; i < userId.Length; i++)
+        {
+            byte b = (byte)userId[i];
+            sb.Append(hexchars[(int)(b >> 4)]);
+            sb.Append(hexchars[(int)(b & 0xF)]);
+        }
+        sb.Append("\r\n");
+        return sb.ToString();
+#else
+        return string.Create<string>(
+            length: AuthExternal.Length + userId.Length * 2 + 2, userId,
+            static (Span<char> span, string userId) =>
+            {
+                AuthExternal.AsSpan().CopyTo(span);
+                span = span.Slice(AuthExternal.Length);
+
+                for (int i = 0; i < userId.Length; i++)
+                {
+                    byte b = (byte)userId[i];
+                    span[i * 2] = hexchars[(int)(b >> 4)];
+                    span[i * 2 + 1] = hexchars[(int)(b & 0xF)];
+                }
+                span = span.Slice(userId.Length * 2);
+
+                span[0] = '\r';
+                span[1] = '\n';
+            });
+#endif
     }
 
     private async ValueTask<AuthenticationResult> SendAuthCommandAsync(string command, bool supportsFdPassing)
@@ -291,7 +309,11 @@ class MessageStream : IMessageStream
                 // TODO: validate char
                 charBuffer[i] = (char)span[i];
             }
+#if NETSTANDARD2_0
+            return Guid.ParseExact(charBuffer.AsString(), "N");
+#else
             return Guid.ParseExact(charBuffer, "N");
+#endif
         }
     }
 

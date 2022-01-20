@@ -451,7 +451,7 @@ class DBusConnection : IDisposable
 
     public async Task CallMethodAsync(MessageBuffer message)
     {
-        TaskCompletionSource tcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        TaskCompletionSource<object?> tcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
         await CallMethodAsync(message,
             static (Exception? exception, in Message message, object? state) => CompleteCallTaskCompletionSource(exception, in message, state), tcs);
@@ -461,7 +461,7 @@ class DBusConnection : IDisposable
 
     private static void CompleteCallTaskCompletionSource(Exception? exception, in Message message, object? tcs)
     {
-        var tcsState = (TaskCompletionSource)tcs!;
+        var tcsState = (TaskCompletionSource<object?>)tcs!;
 
         if (exception is not null)
         {
@@ -469,7 +469,7 @@ class DBusConnection : IDisposable
         }
         else if (message.MessageType == MessageType.MethodReturn)
         {
-            tcsState.SetResult();
+            tcsState.SetResult(null);
         }
         else if (message.MessageType == MessageType.Error)
         {
@@ -735,7 +735,7 @@ class DBusConnection : IDisposable
 
         public List<Observer> Observers { get; } = new();
 
-        public TaskCompletionSource? AddMatchTcs { get; set; }
+        public TaskCompletionSource<object?>? AddMatchTcs { get; set; }
 
         public bool HasSubscribed { get; set; }
 
@@ -748,7 +748,7 @@ class DBusConnection : IDisposable
 
             _type = data.MessageType;
 
-            if (data.Sender is not null && data.Sender.StartsWith(':'))
+            if (data.Sender is not null && data.Sender.StartsWith(":"))
             {
                 _sender = Encoding.UTF8.GetBytes(data.Sender);
             }
@@ -903,11 +903,11 @@ class DBusConnection : IDisposable
         {
             if (rhs.Length < lhs.Length)
             {
-                return rhs[^1] == '/' && lhs.StartsWith(rhs);
+                return rhs[rhs.Length - 1] == '/' && lhs.StartsWith(rhs);
             }
             else if (lhs.Length < rhs.Length)
             {
-                return lhs[^1] == '/' && rhs.StartsWith(lhs);
+                return lhs[lhs.Length - 1] == '/' && rhs.StartsWith(lhs);
             }
             else
             {
